@@ -70,6 +70,7 @@ import { onScriptOpen } from '../scriptEditorStore'
 import { ScriptRuntime } from '../scripting/ScriptRuntime'
 import { getAssetStore, clearAllBlobs, type AssetNode } from '../assetStore'
 import { clearLogs } from '../scripting/consoleStore'
+import { clearAllSessions } from '../chatHistoryStore'
 
 const SCRIPT_EXT = ['.ts', '.tsx', '.js', '.jsx']
 
@@ -782,6 +783,7 @@ export default function Home() {
                                 children: [],
                             })
                             await clearAllBlobs()
+                            await clearAllSessions()
                             setSceneJson(null)
                             globalThis.location.reload()
                         }}

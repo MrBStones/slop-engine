@@ -79,6 +79,19 @@ export async function deleteSession(id: string): Promise<void> {
     })
 }
 
+export async function clearAllSessions(): Promise<void> {
+    const db = await openDB()
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite')
+        const req = tx.objectStore(STORE_NAME).clear()
+        req.onsuccess = () => resolve()
+        req.onerror = () =>
+            reject(
+                new Error(req.error?.message ?? 'Failed to clear sessions')
+            )
+    })
+}
+
 // ── Utilities ───────────────────────────────────────────────────────
 
 export function generateChatId(): string {
