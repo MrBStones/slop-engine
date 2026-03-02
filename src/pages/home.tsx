@@ -1,17 +1,9 @@
-import { HavokPlugin } from 'babylonjs'
-
 import {
     ResetConfirmModal,
     EditorTopbar,
     EditorLayout,
 } from '../components/editor'
-import {
-    loadSceneFromJson,
-    setupEditorCamera,
-    downloadSceneBundle,
-    importSceneBundle,
-} from '../scene/EditorScene'
-import { getInitializedHavok } from '../utils/editorUtils'
+import { downloadSceneBundle, importSceneBundle } from '../scene/EditorScene'
 import { getAssetStore, clearAllBlobs } from '../assetStore'
 import { clearAllSessions } from '../chatHistoryStore'
 import { useEditorState } from '../hooks/useEditorState'
@@ -26,6 +18,13 @@ export default function Home() {
     const handleReset = async () => {
         await clearAllBlobs()
         await clearAllSessions()
+        getAssetStore().setTree({
+            id: '__root__',
+            name: 'Assets',
+            type: 'folder',
+            path: '',
+            children: [],
+        })
         state.setSceneJson(null)
         globalThis.location.reload()
     }
@@ -33,28 +32,12 @@ export default function Home() {
     const handleBundleImport = async (e: Event) => {
         const file = (e.currentTarget as HTMLInputElement).files?.[0]
         if (!file) return
-        const eng = state.engine()
-        if (!eng) return
         try {
             const { sceneJson: bundleJson, assetTree } =
                 await importSceneBundle(file)
-            const initializedHavok = await getInitializedHavok()
-            const physicsPlugin = new HavokPlugin(true, initializedHavok)
-            const { scene: newScene } = await loadSceneFromJson(
-                eng,
-                bundleJson,
-                physicsPlugin
-            )
-            setupEditorCamera(
-                newScene,
-                document.getElementById('canvas') as HTMLCanvasElement
-            )
             getAssetStore().setTree(assetTree)
-            state.setScene(newScene)
-            state.setSelectedNode(undefined)
             state.setSceneJson(bundleJson)
-            state.setLastSaved(new Date())
-            state.setIsDirty(false)
+            globalThis.location.reload()
         } catch (err) {
             console.error('Failed to import bundle:', err)
         }
