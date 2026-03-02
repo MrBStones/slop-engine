@@ -16,11 +16,13 @@ bun run serve    # Preview production build
 
 Package manager: project uses `bun`.
 
+You are running on windows.
+
 ## Code Style
 
--   **Prettier**: 4-space indentation, no semicolons, single quotes, trailing commas (es5)
--   **TypeScript**: Strict mode, JSX preserved for Solid.js (`jsxImportSource: "solid-js"`)
--   No linter or test runner configured
+- **Prettier**: 4-space indentation, no semicolons, single quotes, trailing commas (es5)
+- **TypeScript**: Strict mode, JSX preserved for Solid.js (`jsxImportSource: "solid-js"`)
+- No linter or test runner configured
 
 ## Architecture
 
@@ -34,9 +36,9 @@ This is the main file containing all 3D engine setup, physics initialization, gi
 
 Key state signals:
 
--   `scene` / `selectedNode` / `isPlaying` - core editor state
--   `sizes` / `sceneSizes` / `propSizes` - panel sizes persisted to localStorage via `makePersisted()`
--   `nodeTick` - incremented during gizmo drags to force property panel re-renders
+- `scene` / `selectedNode` / `isPlaying` - core editor state
+- `sizes` / `sceneSizes` / `propSizes` - panel sizes persisted to localStorage via `makePersisted()`
+- `nodeTick` - incremented during gizmo drags to force property panel re-renders
 
 ### Panel Layout (`corvu/resizable`)
 
@@ -53,10 +55,10 @@ Panels are nested `Resizable` components from corvu. Sizes persist to localStora
 
 ### Component Organization
 
--   `src/components/panels/` - Editor panels (ViewportPanel, ScenePanel, PropertiesPanel, AIPanel, ConsolePanel)
--   `src/components/ui/` - Reusable UI components (Button, Input, Vector3Input, Color3Input, TreeView, Collapsible, etc.)
--   `src/components/Handle.tsx` - Resizable panel divider
--   `src/components/Panel.tsx` - Panel wrapper
+- `src/components/panels/` - Editor panels (ViewportPanel, ScenePanel, PropertiesPanel, AIPanel, ConsolePanel)
+- `src/components/ui/` - Reusable UI components (Button, Input, Vector3Input, Color3Input, TreeView, Collapsible, etc.)
+- `src/components/Handle.tsx` - Resizable panel divider
+- `src/components/Panel.tsx` - Panel wrapper
 
 ### Key Patterns
 

@@ -618,7 +618,7 @@ declare class Light extends SceneNode {
     setEnabled(value: boolean): void
 }
 
-/** A camera in the scene. */
+/** A camera in the scene. (NOTE: you cannot attach scripts to the camera node)*/
 declare class Camera extends SceneNode {
     /** World-space position. */
     position: Vector3

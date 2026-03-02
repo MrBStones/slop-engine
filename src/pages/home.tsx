@@ -6,7 +6,6 @@ import {
     EditorLayout,
 } from '../components/editor'
 import {
-    createDefaultScene,
     loadSceneFromJson,
     setupEditorCamera,
     downloadSceneBundle,
@@ -25,22 +24,10 @@ export default function Home() {
     let bundleInputRef: HTMLInputElement | undefined
 
     const handleReset = async () => {
-        const eng = state.engine()
-        if (!eng) return
-        const initializedHavok = await getInitializedHavok()
-        const physicsPlugin = new HavokPlugin(true, initializedHavok)
-        const { scene: newScene } = createDefaultScene(eng, physicsPlugin)
-        setupEditorCamera(
-            newScene,
-            document.getElementById('canvas') as HTMLCanvasElement
-        )
         await clearAllBlobs()
         await clearAllSessions()
-        state.setScene(newScene)
-        state.setSelectedNode(undefined)
         state.setSceneJson(null)
-        state.setLastSaved(null)
-        state.setIsDirty(false)
+        globalThis.location.reload()
     }
 
     const handleBundleImport = async (e: Event) => {
