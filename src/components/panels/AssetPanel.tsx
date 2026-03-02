@@ -45,12 +45,14 @@ import { Scene, Node } from 'babylonjs'
 import { openScriptFile } from '../../scriptEditorStore'
 import {
     importModelToScene,
+    instantiatePrefabInScene,
     type AssetResolver,
 } from '../../scene/SceneOperations'
 
 // ── Constants ──────────────────────────────────────────────
 
 const MODEL_EXT = ['.glb', '.gltf', '.obj']
+const PREFAB_EXT = '.prefab.json'
 const TEXTURE_EXT = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tga']
 const SCRIPT_EXT = ['.ts', '.tsx', '.js', '.jsx']
 const INVALID_NAME_CHARS = /[\\/:*?"<>|]/
@@ -96,6 +98,7 @@ function splitFilename(name: string): [string, string] {
 }
 
 function getFileIcon(name: string): typeof document {
+    if (name.toLowerCase().endsWith(PREFAB_EXT)) return cube
     const ext = name.slice(name.lastIndexOf('.')).toLowerCase()
     if (MODEL_EXT.includes(ext)) return cube
     if (TEXTURE_EXT.includes(ext)) return photo
@@ -241,10 +244,32 @@ export default function AssetPanel(props: AssetPanelProps) {
         props.setNodeTick?.((t) => t + 1)
     }
 
+    async function addPrefabToScene(node: AssetNode) {
+        const s = props.scene?.()
+        if (!s || node.type !== 'file' || !isPrefabFile(node)) return
+
+        const blob = await getBlob(node.path)
+        if (!blob) return
+
+        try {
+            const json = await blob.text()
+            const root = instantiatePrefabInScene(s, json)
+            props.setSelectedNode?.(root)
+            props.setNodeTick?.((t) => t + 1)
+        } catch (error) {
+            console.error('Failed to add prefab to scene:', error)
+        }
+    }
+
     function isModelFile(node: AssetNode | null): boolean {
         if (!node || node.type !== 'file') return false
         const ext = node.name.slice(node.name.lastIndexOf('.')).toLowerCase()
         return MODEL_EXT.includes(ext)
+    }
+
+    function isPrefabFile(node: AssetNode | null): boolean {
+        if (!node || node.type !== 'file') return false
+        return node.name.toLowerCase().endsWith(PREFAB_EXT)
     }
 
     const handleDoubleClick = (_id: string, data: AssetNode | undefined) => {
@@ -254,6 +279,8 @@ export default function AssetPanel(props: AssetPanelProps) {
             openScriptFile(data.path)
         } else if (MODEL_EXT.includes(ext)) {
             addAssetModelToScene(data)
+        } else if (isPrefabFile(data)) {
+            addPrefabToScene(data)
         }
     }
 
@@ -296,7 +323,8 @@ export default function AssetPanel(props: AssetPanelProps) {
     function getContextMenuItems(): ContextMenuItem[] {
         const node = contextMenu()?.node
         return [
-            ...(isModelFile(node ?? null) && props.scene
+            ...((isModelFile(node ?? null) || isPrefabFile(node ?? null)) &&
+            props.scene
                 ? [
                       {
                           id: 'add-to-scene',
@@ -332,7 +360,11 @@ export default function AssetPanel(props: AssetPanelProps) {
 
         switch (id) {
             case 'add-to-scene':
-                if (ctx.node) addAssetModelToScene(ctx.node)
+                if (ctx.node && isPrefabFile(ctx.node)) {
+                    void addPrefabToScene(ctx.node)
+                } else if (ctx.node) {
+                    void addAssetModelToScene(ctx.node)
+                }
                 break
             case 'new-folder':
                 openModal('newFolder', { parentPath }, 'New Folder')

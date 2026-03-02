@@ -15,6 +15,7 @@ import {
     addMeshToScene,
     addLightToScene,
     nextName,
+    serializeNodeAsPrefab,
 } from '../../scene/SceneOperations'
 import {
     cube,
@@ -26,8 +27,20 @@ import {
     plus,
 } from 'solid-heroicons/outline'
 import { Icon } from 'solid-heroicons'
-import { TreeView, TreeNode, TreeMoveEvent, ContextMenu } from '../ui'
+import {
+    TreeView,
+    TreeNode,
+    TreeMoveEvent,
+    ContextMenu,
+    Modal,
+    ModalHeader,
+    ModalBody,
+    ModalFooter,
+    Input,
+    Button,
+} from '../ui'
 import type { TreeContextMenuEvent, ContextMenuItem } from '../ui'
+import { getAssetStore, setBlob } from '../../assetStore'
 
 function getNodeIcon(node: Node) {
     if (node instanceof Mesh) return cube
@@ -94,6 +107,14 @@ export default function ScenePanel(
         y: number
         node: Node | undefined
     } | null>(null)
+    const [showSavePrefabModal, setShowSavePrefabModal] = createSignal(false)
+    const [prefabName, setPrefabName] = createSignal('')
+    const [prefabError, setPrefabError] = createSignal<string | null>(null)
+    const [prefabSourceNode, setPrefabSourceNode] = createSignal<
+        Node | undefined
+    >(undefined)
+
+    const assetStore = getAssetStore()
 
     function addMesh(type: string) {
         const scene = props.scene()
@@ -215,6 +236,7 @@ export default function ScenePanel(
             if (!(node instanceof Camera)) {
                 items.push({ id: 'duplicate', label: 'Duplicate' })
             }
+            items.push({ id: 'save-prefab', label: 'Save as Prefab' })
             items.push({ id: 'delete', label: 'Delete', danger: true })
         }
 
@@ -244,9 +266,54 @@ export default function ScenePanel(
             deleteNode(ctx.node)
         } else if (id === 'duplicate' && ctx.node) {
             duplicateNode(ctx.node)
+        } else if (id === 'save-prefab' && ctx.node) {
+            const baseName = ctx.node.name?.trim() || 'prefab'
+            const filename = baseName.endsWith('.prefab.json')
+                ? baseName
+                : `${baseName}.prefab.json`
+            setPrefabSourceNode(ctx.node)
+            setPrefabName(filename)
+            setPrefabError(null)
+            setShowSavePrefabModal(true)
         }
 
         setContextMenu(null)
+    }
+
+    function ensureFolder(parentPath: string, name: string) {
+        const path = parentPath ? `${parentPath}/${name}` : name
+        if (assetStore.findNode(assetStore.tree(), path)) return
+        assetStore.addNode(parentPath, name, 'folder')
+    }
+
+    async function savePrefab() {
+        const node = prefabSourceNode()
+        if (!node) return
+
+        const raw = prefabName().trim()
+        if (!raw) {
+            setPrefabError('Name is required')
+            return
+        }
+
+        const filename = raw.endsWith('.prefab.json')
+            ? raw
+            : `${raw}.prefab.json`
+
+        try {
+            ensureFolder('', 'prefabs')
+            const path = `prefabs/${filename}`
+            if (!assetStore.findNode(assetStore.tree(), path)) {
+                assetStore.addNode('prefabs', filename, 'file')
+            }
+            const json = serializeNodeAsPrefab(node)
+            await setBlob(path, new Blob([json], { type: 'application/json' }))
+            setShowSavePrefabModal(false)
+            setPrefabSourceNode(undefined)
+            setPrefabError(null)
+        } catch (error) {
+            setPrefabError((error as Error).message)
+        }
     }
 
     function buildSceneTree(scene: Scene): TreeNode<Node>[] {
@@ -489,6 +556,41 @@ export default function ScenePanel(
                 onSelect={handleContextMenuSelect}
                 onClose={() => setContextMenu(null)}
             />
+            <Modal
+                open={showSavePrefabModal()}
+                onClose={() => {
+                    setShowSavePrefabModal(false)
+                    setPrefabSourceNode(undefined)
+                }}
+                size="sm"
+            >
+                <ModalHeader>Save as Prefab</ModalHeader>
+                <ModalBody>
+                    <Input
+                        label="Filename"
+                        value={prefabName()}
+                        onInput={(e) => setPrefabName(e.currentTarget.value)}
+                        error={prefabError() ?? undefined}
+                        onKeyDown={(e) =>
+                            e.key === 'Enter' && void savePrefab()
+                        }
+                    />
+                </ModalBody>
+                <ModalFooter>
+                    <Button
+                        variant="ghost"
+                        onClick={() => {
+                            setShowSavePrefabModal(false)
+                            setPrefabSourceNode(undefined)
+                        }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button variant="primary" onClick={() => void savePrefab()}>
+                        Save
+                    </Button>
+                </ModalFooter>
+            </Modal>
         </div>
     )
 }

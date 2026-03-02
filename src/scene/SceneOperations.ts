@@ -68,6 +68,11 @@ export interface AddMeshOptions {
     size?: MeshSize
 }
 
+export interface PrefabData {
+    version: 1
+    root: NodeSnapshot
+}
+
 export interface AddLightOptions {
     type: string
     name?: string
@@ -102,12 +107,20 @@ export function nextName(prefix: string): string {
 interface NodeSnapshot {
     name: string
     type: string
+    enabled?: boolean
     position?: [number, number, number]
     rotation?: [number, number, number]
     scale?: [number, number, number]
     color?: [number, number, number]
     intensity?: number
     direction?: [number, number, number]
+    meshType?: string
+    visible?: boolean
+    visibility?: number
+    checkCollisions?: boolean
+    receiveShadows?: boolean
+    physicsEnabled?: boolean
+    physicsMass?: number
     size?: Record<string, number>
     scripts?: string[]
     children?: NodeSnapshot[]
@@ -152,6 +165,7 @@ function snapshotNode(node: Node): NodeSnapshot {
     const snap: NodeSnapshot = {
         name: node.name,
         type: getNodeType(node),
+        enabled: node.isEnabled(),
     }
 
     if (node instanceof TransformNode) {
@@ -167,9 +181,25 @@ function snapshotNode(node: Node): NodeSnapshot {
         if (mat instanceof StandardMaterial) {
             snap.color = color3ToArray(mat.diffuseColor)
         }
+        snap.visible = node.isVisible
+        snap.visibility = Math.round(node.visibility * 1000) / 1000
+        snap.checkCollisions = node.checkCollisions
+        snap.receiveShadows = node.receiveShadows
         const meta = node.metadata as { size?: Record<string, number> } | undefined
         if (meta?.size && Object.keys(meta.size).length > 0) {
             snap.size = meta.size
+        }
+        if (meta && typeof (meta as Record<string, unknown>).physicsEnabled === 'boolean') {
+            snap.physicsEnabled = (meta as { physicsEnabled: boolean }).physicsEnabled
+        }
+        if (meta && typeof (meta as Record<string, unknown>).physicsMass === 'number') {
+            snap.physicsMass = (meta as { physicsMass: number }).physicsMass
+        }
+        if (
+            meta &&
+            typeof (meta as Record<string, unknown>).meshType === 'string'
+        ) {
+            snap.meshType = (meta as { meshType: string }).meshType
         }
     }
 
@@ -202,6 +232,168 @@ function snapshotNode(node: Node): NodeSnapshot {
 
 export function getSceneSnapshot(scene: Scene): NodeSnapshot[] {
     return scene.rootNodes.map(snapshotNode)
+}
+
+function nextAvailableName(scene: Scene, baseName: string): string {
+    if (!scene.getNodeByName(baseName)) return baseName
+    let index = 1
+    while (scene.getNodeByName(`${baseName}_${index}`)) {
+        index++
+    }
+    return `${baseName}_${index}`
+}
+
+function applyScripts(node: Node, scripts: string[] | undefined): void {
+    if (!scripts || scripts.length === 0) return
+    if (!node.metadata) node.metadata = {}
+    ;(node.metadata as Record<string, unknown>).scripts = [...scripts]
+}
+
+function setNodeParent(node: Node, parent: Node | null): void {
+    if (!parent) return
+    node.parent = parent
+}
+
+function instantiateFromSnapshot(
+    scene: Scene,
+    snap: NodeSnapshot,
+    parent: Node | null
+): Node {
+    const name = nextAvailableName(scene, snap.name || nextName('Node'))
+    let node: Node
+
+    switch (snap.type) {
+        case 'Mesh': {
+            node = addMeshToScene(scene, {
+                type: snap.meshType ?? 'box',
+                name,
+                position: snap.position,
+                rotation: snap.rotation,
+                scale: snap.scale,
+                color: snap.color,
+                size: snap.size,
+            })
+            const mesh = node as Mesh
+            if (snap.visible !== undefined) mesh.isVisible = snap.visible
+            if (snap.visibility !== undefined) mesh.visibility = snap.visibility
+            if (snap.checkCollisions !== undefined) {
+                mesh.checkCollisions = snap.checkCollisions
+            }
+            if (snap.receiveShadows !== undefined) {
+                mesh.receiveShadows = snap.receiveShadows
+            }
+            if (!mesh.metadata) mesh.metadata = {}
+            const meta = mesh.metadata as Record<string, unknown>
+            if (snap.physicsEnabled !== undefined) {
+                meta.physicsEnabled = snap.physicsEnabled
+            }
+            if (snap.physicsMass !== undefined) {
+                meta.physicsMass = snap.physicsMass
+            }
+            break
+        }
+        case 'PointLight': {
+            node = addLightToScene(scene, {
+                type: 'point',
+                name,
+                position: snap.position,
+                intensity: snap.intensity,
+                color: snap.color,
+            })
+            break
+        }
+        case 'DirectionalLight': {
+            node = addLightToScene(scene, {
+                type: 'directional',
+                name,
+                direction: snap.direction,
+                intensity: snap.intensity,
+                color: snap.color,
+            })
+            break
+        }
+        case 'SpotLight': {
+            node = addLightToScene(scene, {
+                type: 'spot',
+                name,
+                position: snap.position,
+                direction: snap.direction,
+                intensity: snap.intensity,
+                color: snap.color,
+            })
+            break
+        }
+        case 'HemisphericLight': {
+            node = addLightToScene(scene, {
+                type: 'hemispheric',
+                name,
+                direction: snap.direction,
+                intensity: snap.intensity,
+                color: snap.color,
+            })
+            break
+        }
+        case 'TransformNode':
+        case 'Camera':
+        case 'Node':
+        default: {
+            const transform = new TransformNode(name, scene)
+            if (snap.position) {
+                transform.position = new Vector3(
+                    snap.position[0],
+                    snap.position[1],
+                    snap.position[2]
+                )
+            }
+            if (snap.rotation) {
+                transform.rotation = new Vector3(
+                    snap.rotation[0],
+                    snap.rotation[1],
+                    snap.rotation[2]
+                )
+            }
+            if (snap.scale) {
+                transform.scaling = new Vector3(
+                    snap.scale[0],
+                    snap.scale[1],
+                    snap.scale[2]
+                )
+            }
+            node = transform
+            break
+        }
+    }
+
+    if (snap.enabled !== undefined) {
+        node.setEnabled(snap.enabled)
+    }
+
+    applyScripts(node, snap.scripts)
+    setNodeParent(node, parent)
+
+    if (snap.children?.length) {
+        for (const child of snap.children) {
+            instantiateFromSnapshot(scene, child, node)
+        }
+    }
+
+    return node
+}
+
+export function serializeNodeAsPrefab(node: Node): string {
+    const prefab: PrefabData = {
+        version: 1,
+        root: snapshotNode(node),
+    }
+    return JSON.stringify(prefab, null, 2)
+}
+
+export function instantiatePrefabInScene(scene: Scene, json: string): Node {
+    const parsed = JSON.parse(json) as Partial<PrefabData>
+    if (!parsed || parsed.version !== 1 || !parsed.root) {
+        throw new Error('Invalid prefab file')
+    }
+    return instantiateFromSnapshot(scene, parsed.root, null)
 }
 
 // ── Add mesh ─────────────────────────────────────────────────────────
@@ -302,7 +494,12 @@ export function addMeshToScene(scene: Scene, options: AddMeshOptions): Mesh {
         mat.diffuseColor = new Color3(0.6, 0.6, 0.6)
     }
     mesh.material = mat
-    mesh.metadata = { physicsMass: 1, physicsEnabled: false, size: sz ?? {} }
+    mesh.metadata = {
+        physicsMass: 1,
+        physicsEnabled: false,
+        size: sz ?? {},
+        meshType: options.type,
+    }
 
     if (options.position) {
         mesh.position = new Vector3(
