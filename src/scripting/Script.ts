@@ -1,6 +1,7 @@
 import {
     Scene,
     Node,
+    Light,
     Mesh,
     TransformNode,
     UniversalCamera,
@@ -27,15 +28,34 @@ export interface CollisionEvent {
 /** @internal */
 export type CollisionCallback = (event: CollisionEvent) => void
 
+/** Valid node type names for the static `nodeType` filter. */
+export type ScriptNodeType = 'Node' | 'TransformNode' | 'Mesh' | 'Light'
+
 /**
  * Runtime base class for user scripts.
  *
  * Properties (`node`, `scene`, `input`, etc.) are assigned by the
  * ScriptRuntime after construction but before `start()` is called.
+ *
+ * Use the generic parameter to declare what kind of node this script
+ * attaches to. This gives you a correctly-typed `this.node` and
+ * prevents the script from being attached to incompatible nodes.
+ *
+ * For convenience, use the pre-typed subclasses instead of the generic:
+ * - `MeshScript`   — `this.node` is a `Mesh`
+ * - `LightScript`  — `this.node` is a `Light`
  */
-export class Script {
+export class Script<N extends Node = TransformNode> {
+    /**
+     * Restrict which node types this script can be attached to.
+     * Override in subclasses or set as a static property.
+     * Valid values: `'Node'`, `'TransformNode'`, `'Mesh'`, `'Camera'`, `'Light'`.
+     * When unset the script can attach to any node.
+     */
+    static nodeType?: ScriptNodeType
+
     /** The node this script is attached to. */
-    node!: TransformNode
+    node!: N
 
     /** The scene containing this node. */
     scene!: Scene
@@ -242,3 +262,43 @@ function pickToHit(pick: PickingInfo): RaycastHit {
         distance: pick.distance,
     }
 }
+
+// ---------------------------------------------------------------------------
+// Convenience subclasses — strongly-typed `node` + runtime nodeType guard
+// ---------------------------------------------------------------------------
+
+/**
+ * A script that attaches to a **Mesh** node.
+ *
+ * `this.node` is typed as `Mesh`, giving direct access to `.material`,
+ * `.physicsBody`, `.visibility`, etc. The engine will refuse to attach this
+ * script to non-mesh nodes.
+ *
+ * @example
+ * export default class extends MeshScript {
+ *     start() {
+ *         this.log('Material:', this.node.material?.name)
+ *     }
+ * }
+ */
+export class MeshScript extends Script<Mesh> {
+    static override nodeType: ScriptNodeType = 'Mesh'
+}
+
+/**
+ * A script that attaches to a **Light** node.
+ *
+ * `this.node` is typed as `Light`, giving direct access to `.intensity`,
+ * `.diffuse`, etc.
+ *
+ * @example
+ * export default class extends LightScript {
+ *     update() {
+ *         this.node.intensity = 1 + Math.sin(this.time) * 0.5
+ *     }
+ * }
+ */
+export class LightScript extends Script<Light> {
+    static override nodeType: ScriptNodeType = 'Light'
+}
+

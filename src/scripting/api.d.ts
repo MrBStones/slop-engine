@@ -4,7 +4,12 @@
  * Scripts extend the Script class and implement lifecycle methods.
  * All types below are available globally — no imports needed.
  *
+ * For scripts that target a specific node type, extend the typed subclass:
+ * - `MeshScript`   — `this.node` is a `Mesh`  (material, physicsBody, etc.)
+ * - `LightScript`  — `this.node` is a `Light`  (intensity, diffuse, etc.)
+ *
  * @example
+ * // Generic script — works on any node
  * export default class extends Script {
  *     speed = 2
  *
@@ -18,6 +23,14 @@
  *
  *     destroy() {
  *         this.log('Goodbye')
+ *     }
+ * }
+ *
+ * @example
+ * // Mesh-only script — this.node is a Mesh
+ * export default class extends MeshScript {
+ *     start() {
+ *         this.log('Material:', this.node.material?.name)
  *     }
  * }
  */
@@ -34,8 +47,8 @@
  * automatically before `start()` is called — you can use them immediately.
  */
 declare class Script {
-    /** The node this script is attached to. */
-    readonly node: TransformNode
+    /** The node this script is attached to (TransformNode for generic scripts). */
+    readonly node: TransformNode | SceneNode
 
     /** The scene containing this node. */
     readonly scene: Scene
@@ -230,6 +243,54 @@ declare class Script {
      * }
      */
     onCollisionEnd(callback: (event: CollisionEvent) => void): void
+}
+
+// ---------------------------------------------------------------------------
+// Typed script subclasses
+// ---------------------------------------------------------------------------
+
+/**
+ * A script that can **only** be attached to a Mesh node.
+ *
+ * `this.node` is typed as `Mesh`, giving direct access to `.material`,
+ * `.physicsBody`, `.visibility`, `.isPickable`, etc. The engine will refuse
+ * to attach this script to non-mesh nodes and log an error.
+ *
+ * @example
+ * export default class extends MeshScript {
+ *     start() {
+ *         this.log('My material:', this.node.material?.name)
+ *         this.log('Bounding size:', this.node.getBoundingSize())
+ *     }
+ *
+ *     update() {
+ *         // Spin the mesh
+ *         this.node.rotation.y += this.deltaTime
+ *     }
+ * }
+ */
+declare class MeshScript extends Script {
+    /** The mesh this script is attached to. */
+    readonly node: Mesh
+}
+
+/**
+ * A script that can **only** be attached to a Light node.
+ *
+ * `this.node` is typed as `Light`, giving direct access to `.intensity`,
+ * `.diffuse`, `.specular`, etc.
+ *
+ * @example
+ * export default class extends LightScript {
+ *     update() {
+ *         // Pulsating light
+ *         this.node.intensity = 1 + Math.sin(this.time * 2) * 0.5
+ *     }
+ * }
+ */
+declare class LightScript extends Script {
+    /** The light this script is attached to. */
+    readonly node: Light
 }
 
 // ---------------------------------------------------------------------------

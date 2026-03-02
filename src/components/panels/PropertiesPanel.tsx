@@ -28,6 +28,12 @@ import {
     Select,
 } from '../ui'
 import { openScriptFile } from '../../scriptEditorStore'
+import { getBlob } from '../../assetStore'
+import {
+    parseScriptNodeType,
+    getNodeTypeName,
+} from '../../scripting/ScriptRuntime'
+import type { ScriptNodeType } from '../../scripting/Script'
 
 const fmt = (v: number | undefined) => v?.toFixed(3)
 
@@ -199,6 +205,56 @@ function ScriptProperties(
     }>
 ) {
     const [addPath, setAddPath] = createSignal('')
+    // Map of script path → parsed nodeType (undefined = any node)
+    const [scriptTypes, setScriptTypes] = createSignal<
+        Record<string, ScriptNodeType | undefined>
+    >({})
+
+    // Load and parse nodeType from each script asset whenever the list changes
+    createEffect(() => {
+        const paths = props.scriptAssets()
+        const typeMap: Record<string, ScriptNodeType | undefined> = {}
+        let pending = paths.length
+        if (pending === 0) {
+            setScriptTypes({})
+            return
+        }
+        for (const path of paths) {
+            getBlob(path).then((blob) => {
+                if (blob) {
+                    blob.text().then((src) => {
+                        typeMap[path] = parseScriptNodeType(src)
+                        pending--
+                        if (pending <= 0) setScriptTypes({ ...typeMap })
+                    })
+                } else {
+                    pending--
+                    if (pending <= 0) setScriptTypes({ ...typeMap })
+                }
+            })
+        }
+    })
+
+    /** Check if a script is compatible with the currently selected node. */
+    const isCompatible = (path: string): boolean => {
+        const n = props.node()
+        if (!n) return false
+        const required = scriptTypes()[path]
+        if (!required) return true // no constraint
+        const nodeType = getNodeTypeName(n)
+        switch (required) {
+            case 'Node':
+                return true
+            case 'TransformNode':
+                return nodeType === 'TransformNode' || nodeType === 'Mesh'
+            case 'Mesh':
+                return nodeType === 'Mesh'
+            case 'Light':
+                return nodeType === 'Light'
+            default:
+                return true
+        }
+    }
 
     const attachedScripts = () => {
         const n = props.node()
@@ -209,7 +265,16 @@ function ScriptProperties(
 
     const availableScripts = () => {
         const attached = new Set(attachedScripts())
-        return props.scriptAssets().filter((p) => !attached.has(p))
+        // Only show scripts compatible with this node type
+        return props
+            .scriptAssets()
+            .filter((p) => !attached.has(p) && isCompatible(p))
+    }
+
+    /** Format a display label with node type badge. */
+    const scriptLabel = (path: string): string => {
+        const t = scriptTypes()[path]
+        return t ? `${path}  [${t}]` : path
     }
 
     // Auto-select when there's only one available script
@@ -274,7 +339,7 @@ function ScriptProperties(
                         <Select
                             options={availableScripts().map((p) => ({
                                 value: p,
-                                label: p,
+                                label: scriptLabel(p),
                             }))}
                             placeholder="Add script..."
                             value={addPath()}

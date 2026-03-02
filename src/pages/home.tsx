@@ -420,6 +420,8 @@ export default function Home() {
                                             { mass, restitution: 0.75 },
                                             s
                                         )
+                                        // Allow direct position/rotation changes to move the body
+                                        agg.body.disablePreStep = false
                                         _physicsAggregates.set(mesh, agg)
                                     }
                                 }

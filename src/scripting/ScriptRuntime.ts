@@ -11,7 +11,8 @@ import {
     Observer,
 } from 'babylonjs'
 import { transform } from 'sucrase'
-import { Script } from './Script'
+import { Script, MeshScript, LightScript } from './Script'
+import type { ScriptNodeType } from './Script'
 import { InputManager } from './InputManager'
 import { RuntimeWorld } from './RuntimeWorld'
 import { getBlob } from '../assetStore'
@@ -97,6 +98,8 @@ function compileScript(tsSource: string): new () => Script {
     // The compiled CJS code writes to `exports.default`.
     const wrapper = new Function(
         'Script',
+        'MeshScript',
+        'LightScript',
         'Vector3',
         'Color3',
         'Color4',
@@ -115,6 +118,8 @@ function compileScript(tsSource: string): new () => Script {
 
     const ScriptClass = wrapper(
         Script,
+        MeshScript,
+        LightScript,
         Vector3,
         Color3,
         Color4,
@@ -132,7 +137,72 @@ function compileScript(tsSource: string): new () => Script {
         )
     }
 
-    return ScriptClass as new () => Script
+    return ScriptClass as (new () => Script) & { nodeType?: ScriptNodeType }
+}
+
+// ---------------------------------------------------------------------------
+// Node type helpers (used for validation + UI filtering)
+// ---------------------------------------------------------------------------
+
+/** Return a human-readable type name for a BabylonJS node. */
+export function getNodeTypeName(node: Node): ScriptNodeType {
+    if (node instanceof AbstractMesh) return 'Mesh'
+    if (node instanceof TransformNode) return 'TransformNode'
+    // Lights extend Node, not TransformNode
+    if ((node as any).diffuse !== undefined) return 'Light'
+    return 'Node'
+}
+
+/** Check whether a node satisfies a script's `nodeType` constraint. */
+function isNodeCompatible(node: Node, requiredType: ScriptNodeType): boolean {
+    switch (requiredType) {
+        case 'Node':
+            return true
+        case 'TransformNode':
+            return node instanceof TransformNode
+        case 'Mesh':
+            return node instanceof AbstractMesh
+        case 'Light':
+            return (node as any).diffuse !== undefined
+        default:
+            return true
+    }
+}
+
+/**
+ * Parse the `nodeType` from a script source string without compiling it.
+ * Used by the UI to filter which scripts can be attached to a given node.
+ *
+ * Detects patterns like:
+ * - `extends MeshScript`
+ * - `extends LightScript`
+ * - `static nodeType = 'Mesh'` (or "Mesh")
+ */
+export function parseScriptNodeType(
+    source: string
+): ScriptNodeType | undefined {
+    // Check for convenience subclass usage
+    const extendsMatch = source.match(
+        /extends\s+(MeshScript|LightScript)\b/
+    )
+    if (extendsMatch) {
+        switch (extendsMatch[1]) {
+            case 'MeshScript':
+                return 'Mesh'
+            case 'LightScript':
+                return 'Light'
+        }
+    }
+
+    // Check for static nodeType = '...'
+    const staticMatch = source.match(
+        /static\s+nodeType\s*=\s*['"](\w+)['"]/
+    )
+    if (staticMatch) {
+        return staticMatch[1] as ScriptNodeType
+    }
+
+    return undefined
 }
 
 /**
@@ -185,6 +255,18 @@ export class ScriptRuntime {
 
                     const source = await blob.text()
                     const ScriptClass = compileScript(source)
+
+                    // Validate node type constraint
+                    const requiredType = ScriptClass.nodeType
+                    if (requiredType && !isNodeCompatible(node, requiredType)) {
+                        pushLog(
+                            'error',
+                            `Script "${path}" requires a ${requiredType} node, ` +
+                                `but "${node.name}" is a ${getNodeTypeName(node)}. Skipping.`
+                        )
+                        continue
+                    }
+
                     const instance = new ScriptClass()
 
                     // Wire up runtime properties

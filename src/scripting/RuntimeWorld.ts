@@ -189,6 +189,8 @@ export class RuntimeWorld {
                 },
                 this._scene
             )
+            // Allow direct position/rotation changes to move the body
+            agg.body.disablePreStep = false
             this._physicsAggregates.set(mesh, agg)
         }
 
@@ -222,6 +224,8 @@ export class RuntimeWorld {
             { mass, restitution },
             this._scene
         )
+        // Allow direct position/rotation changes to move the body
+        agg.body.disablePreStep = false
         this._physicsAggregates.set(mesh, agg)
     }
 
