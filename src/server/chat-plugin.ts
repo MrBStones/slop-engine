@@ -1,831 +1,49 @@
 import type { Plugin } from 'vite'
 import { loadEnv } from 'vite'
-import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import { createAzure } from '@ai-sdk/azure'
-import {
-    streamText,
-    convertToModelMessages,
-    jsonSchema,
-    type UIMessage,
-} from 'ai'
+import { streamText, generateText, convertToModelMessages, type UIMessage } from 'ai'
 import { Readable } from 'node:stream'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
-import ts from 'typescript'
 
-// ── System prompt ───────────────────────────────────────────────────
+import {
+    buildSceneAgentSystemPrompt,
+    buildScriptAgentSystemPrompt,
+    buildCoordinatorSystemPrompt,
+} from './prompts'
+import {
+    getSceneTool,
+    playSimulationTool,
+    stopSimulationTool,
+    sleepTool,
+    getConsoleLogsTool,
+    spawnAgentTool,
+    createScriptTool,
+    listScriptsTool,
+    readScriptTool,
+    editScriptTool,
+    deleteScriptTool,
+    attachScriptTool,
+    detachScriptTool,
+    addMeshTool,
+    addLightTool,
+    updateNodeTool,
+    deleteNodeTool,
+    createGroupTool,
+    setParentTool,
+    bulkSceneTool,
+    listAssetsTool,
+    importAssetTool,
+    savePrefabTool,
+} from './tools'
+import { typeCheckScript } from './script-typecheck'
 
-function buildSystemPrompt(projectRoot: string): string {
-    const apiDts = readFileSync(
-        resolve(projectRoot, 'src/scripting/api.d.ts'),
-        'utf-8'
-    )
-
-    return `You are Hippo - the AI assistant for Slop Engine, a 3D scene editor.
-
-## Your Capabilities
-
-- Inspect the current scene with get_scene
-- Add meshes (box, sphere, cylinder, cone, torus, pyramid, plane, ground) with add_mesh
-- Add lights (point, directional, spot, hemispheric) with add_light
-- Create empty group nodes with create_group, organize hierarchy with set_parent
-- Build complex scenes in one call with bulk_scene
-- Import 3D models (.glb, .gltf, .obj) from the asset store with import_asset
-- List available model assets with list_assets
-- Save scene nodes as prefab assets with save_prefab
-- Modify any node's position, rotation, scale, color, or name with update_node
-- Remove nodes from the scene with delete_node
-- Create, read, edit, and delete scripts
-- Attach and detach scripts to/from nodes
-- Start and stop the game simulation with play_simulation and stop_simulation
-- Read and write scene state while the simulation is running (get_scene, update_node, etc.)
-
-## Simulation Control
-
-- Use \`play_simulation\` to start the game. Scripts run, physics is active.
-- Use \`stop_simulation\` to stop and restore the scene to its pre-play state.
-- Use \`sleep\` to wait for a number of seconds (e.g. 2) — useful for runtime testing: start simulation, sleep, then check get_scene or get_console_logs.
-- Use \`get_console_logs\` to read what scripts have logged via \`this.log()\`. Use after sleep to inspect runtime output.
-- While running, you can use get_scene to read current positions/transforms and update_node to modify them. Physics-enabled objects may override position changes on the next frame.
-
-## Scene Manipulation
-
-When manipulating the scene:
-
-- Call get_scene first to understand what's already in the scene before making changes
-- **For complex builds (3+ objects), use bulk_scene** — it runs many operations in one call
-- Node names are case-sensitive and must match exactly
-- Positions and scales are [x, y, z] arrays
-- Colors are [r, g, b] arrays with values 0 to 1
-- The Y axis points up. Ground is at y=0. Objects default to y=1
-- After creating or modifying objects, briefly confirm what was done
-
-### Rotation
-- **Always use rotationDegrees** (e.g. \`rotationDegrees: [0, 90, 0]\` for 90° around Y)
-- The \`rotation\` field uses radians — avoid it unless you need precise radian values
-
-### Mesh Sizes
-Use the \`size\` parameter on add_mesh to set dimensions directly instead of scale:
-- **box**: \`size: { width: X, height: Y, depth: Z }\` — default 1 each
-- **sphere**: \`size: { diameter: D }\` — default 1
-- **cylinder/cone**: \`size: { height: H, diameter: D }\` — default 1 each
-- **torus**: \`size: { diameter: D, thickness: T }\` — default 1, 0.3
-- **pyramid**: \`size: { height: H, diameter: D }\` — default 1 each (4-sided base)
-- **plane**: \`size: { width: W, height: H }\` — default 1 each
-- **ground**: \`size: { width: W, height: H }\` — default 10 each
-
-### Grouping & Hierarchy
-- Use \`create_group\` to make empty container nodes
-- Use \`set_parent\` to make nodes children of a group
-- Moving/rotating a parent moves all its children
-- Always group related objects (e.g. all parts of a house under a "house" group)
-
-### Bulk Operations
-Use \`bulk_scene\` when creating or modifying 3+ objects. It takes an \`operations\` array where each item has an \`action\` field plus that action's parameters. Operations run sequentially, so later ones can reference nodes created earlier.
-
-**Always give explicit names** to nodes in bulk operations so you can reference them in set_parent.
-
-### Example: Building a House with bulk_scene
-\`\`\`json
-{ "operations": [
-  { "action": "create_group", "name": "house" },
-  { "action": "add_mesh", "type": "box", "name": "floor", "size": { "width": 6, "height": 0.1, "depth": 6 }, "position": [0, 0, 0], "color": [0.45, 0.32, 0.2] },
-  { "action": "add_mesh", "type": "box", "name": "wall_front", "size": { "width": 6, "height": 3, "depth": 0.2 }, "position": [0, 1.5, -3], "color": [0.9, 0.85, 0.7] },
-  { "action": "add_mesh", "type": "box", "name": "wall_back", "size": { "width": 6, "height": 3, "depth": 0.2 }, "position": [0, 1.5, 3], "color": [0.9, 0.85, 0.7] },
-  { "action": "add_mesh", "type": "box", "name": "wall_left", "size": { "width": 0.2, "height": 3, "depth": 6 }, "position": [-3, 1.5, 0], "color": [0.9, 0.85, 0.7] },
-  { "action": "add_mesh", "type": "box", "name": "wall_right", "size": { "width": 0.2, "height": 3, "depth": 6 }, "position": [3, 1.5, 0], "color": [0.9, 0.85, 0.7] },
-  { "action": "add_mesh", "type": "cone", "name": "roof", "size": { "height": 2, "diameter": 9 }, "position": [0, 4, 0], "color": [0.7, 0.2, 0.1] },
-  { "action": "set_parent", "node": "floor", "parent": "house" },
-  { "action": "set_parent", "node": "wall_front", "parent": "house" },
-  { "action": "set_parent", "node": "wall_back", "parent": "house" },
-  { "action": "set_parent", "node": "wall_left", "parent": "house" },
-  { "action": "set_parent", "node": "wall_right", "parent": "house" },
-  { "action": "set_parent", "node": "roof", "parent": "house" }
-]}
-\`\`\`
-
-### Tool Reference
-
-- \`get_scene\` — JSON with \`simulation\` ("running"|"stopped") and \`nodes\` (names, types, transforms, colors, hierarchy)
-- \`add_mesh\` — Create a mesh. Required: \`type\`. Optional: \`name\`, \`position\`, \`rotationDegrees\`, \`scale\`, \`color\`, \`size\`
-- \`add_light\` — Create a light. Required: \`type\`. Optional: \`name\`, \`position\`, \`direction\`, \`intensity\`, \`color\`
-- \`update_node\` — Update a node. Required: \`name\`. Optional: \`position\`, \`rotationDegrees\`, \`scale\`, \`color\`, \`intensity\`, \`rename\`
-- \`delete_node\` — Delete a node. Required: \`name\`
-- \`create_group\` — Create an empty group node. Required: \`name\`. Optional: \`position\`
-- \`set_parent\` — Set a node's parent. Required: \`node\`, \`parent\` (name or null to unparent)
-- \`bulk_scene\` — Execute multiple operations in one call. Required: \`operations\` array. Each element has \`action\` plus that action's params
-- \`create_script\` — Create a TypeScript script file. Required: \`path\`, \`content\`
-- \`attach_script\` — Attach a script to a node. Required: \`node\`, \`script\` (path)
-- \`detach_script\` — Detach a script from a node. Required: \`node\`, \`script\`
-- \`list_scripts\` — List all script files
-- \`read_script\` — Read a script's source. Required: \`path\`
-- \`edit_script\` — Find-and-replace in a script. Required: \`path\`, \`old_string\`, \`new_string\`
-- \`delete_script\` — Delete a script file. Required: \`path\`
-- \`list_assets\` — List importable 3D models (.glb, .gltf, .obj)
-- \`import_asset\` — Import a model into the scene. Required: \`path\`. Optional: \`position\`, \`scale\`
-- \`save_prefab\` — Save a scene node (including children) as a .prefab.json asset. Required: \`node\`. Optional: \`path\`
-- \`play_simulation\` — Start the game simulation (scripts run, physics active)
-- \`stop_simulation\` — Stop the simulation and restore the scene
-- \`sleep\` — Wait for N seconds. Use for runtime testing (e.g. play, sleep 2, get_console_logs)
-- \`get_console_logs\` — Read logs from scripts' \`this.log()\` calls. Works anytime.
-
-## Creating Scripts
-
-When creating scripts, use the create_script tool. Scripts follow these rules:
-
-- Must export a default class extending \`Script\`
-- Written in TypeScript (transpiled automatically)
-- All engine types are available globally — no imports needed
-- File paths use forward slashes, e.g. \`"scripts/rotate.ts"\`
-- Convention: place scripts in a \`scripts/\` folder
-
-### Lifecycle Methods
-
-- \`start()\` — Called once when play mode starts. Use for initialization.
-- \`update()\` — Called every frame. Use \`this.deltaTime\` for frame-independent movement.
-- \`destroy()\` — Called when play mode stops. Clean up resources here.
-
-### Available Properties (on \`this\`)
-
-- \`this.node\` — The TransformNode this script is attached to
-- \`this.scene\` — The Slop Engine Scene
-- \`this.deltaTime\` — Seconds since last frame
-- \`this.time\` — Seconds since play started
-- \`this.input\` — Keyboard/mouse input state
-
-### Helper Methods
-
-- \`this.findMesh(name)\` — Find a mesh by name. Returns \`Mesh | null\` which has \`position\`, \`rotation\`, \`scaling\`, \`material\`, \`getBoundingSize()\`, etc. **Use this for most lookups.**
-- \`this.findNode(name)\` — Find any node by name. Returns \`SceneNode | null\` which does NOT have \`position\` or transform properties. Only use this for non-mesh nodes like lights.
-- \`this.log(...args)\` — Log to the editor's console panel
-
-### Mesh Sizes & Bounding Boxes
-
-When meshes are created with the \`size\` parameter (e.g. \`size: { width: 30, height: 1 }\`), the dimensions are **baked into the geometry** — the mesh's \`scaling\` stays \`[1,1,1]\`. Do NOT read \`scaling\` to determine a mesh's actual size.
-
-Instead, use \`mesh.getBoundingSize()\` which returns a \`Vector3\` with the actual dimensions:
-\`\`\`typescript
-const platform = this.findMesh('ground')!
-const size = platform.getBoundingSize() // e.g. Vector3(30, 1, 8)
-const halfWidth = size.x / 2
-const halfHeight = size.y / 2
-\`\`\`
-
-## Full Scripting API Reference
-
-\`\`\`typescript
-${apiDts}
-\`\`\`
-
-## Guidelines
-
-- When the user asks to "add a box/sphere/etc.", use add_mesh directly
-- When the user asks to "move/scale/rotate something", use get_scene to find it, then update_node
-- When asked to change colors, use update_node with the color parameter
-- For complex scene setups, call get_scene first, then use multiple tools
-- When the user asks to save an object as a prefab, use save_prefab with the exact node name
-- When the user asks to "make something spin/move/bounce/etc.", create a script with create_script, then attach it to the node with attach_script
-- To modify an existing script, use read_script first, then edit_script for targeted changes
-- Prefer simple, readable code. Avoid over-engineering.
-- Use \`this.deltaTime\` for all movement to ensure frame-rate independence
-- When referencing nodes by name, remind users the name must match their scene
-- If the user asks about scene setup or editor features (not scripting), answer conversationally without tools
-- After creating and attaching a script, briefly explain what it does
-
-## Type Error Feedback
-
-When you create or edit a script, the tool result will include any TypeScript type errors found in the code. If errors are reported, **immediately fix them** using edit_script. Common mistakes:
-- Using properties or methods that don't exist on a type (check the API reference above)
-- Wrong argument types (e.g. passing a number where a Vector3 is expected)
-- Missing required arguments
-- Accessing nullable values without checking for null first`
+// Minimal CoreMessage-compatible type for the subagent endpoint
+type SubagentMessage = {
+    role: 'user' | 'assistant' | 'tool'
+    content: unknown
 }
-
-// ── Tool definitions ────────────────────────────────────────────────
-
-const createScriptTool = {
-    description:
-        'Create or update a TypeScript script file in the project asset store. The script should export a default class extending Script. Use forward-slash paths like "scripts/rotate.ts".',
-    inputSchema: jsonSchema<{ path: string; content: string }>({
-        type: 'object',
-        properties: {
-            path: {
-                type: 'string',
-                description:
-                    'File path for the script (e.g. "scripts/rotate.ts"). Use forward slashes.',
-            },
-            content: {
-                type: 'string',
-                description:
-                    'Full TypeScript source code for the script. Must export a default class extending Script.',
-            },
-        },
-        required: ['path', 'content'],
-    }),
-}
-
-const getSceneTool = {
-    description:
-        'Get a JSON snapshot of the scene. Returns { simulation: "running"|"stopped", nodes: [...] }. Nodes include types, positions, rotations, scales, colors, hierarchy. Works during play—nodes reflect current runtime state. Call first to understand the scene.',
-    inputSchema: jsonSchema<Record<string, never>>({
-        type: 'object',
-        properties: {},
-    }),
-}
-
-const addMeshTool = {
-    description:
-        'Create a new mesh (3D shape) in the scene. Use size to set dimensions directly.',
-    inputSchema: jsonSchema<{
-        type: string
-        name?: string
-        position?: [number, number, number]
-        rotation?: [number, number, number]
-        rotationDegrees?: [number, number, number]
-        scale?: [number, number, number]
-        color?: [number, number, number]
-        size?: {
-            width?: number
-            height?: number
-            depth?: number
-            diameter?: number
-            thickness?: number
-        }
-    }>({
-        type: 'object',
-        properties: {
-            type: {
-                type: 'string',
-                enum: [
-                    'box',
-                    'sphere',
-                    'cylinder',
-                    'cone',
-                    'torus',
-                    'pyramid',
-                    'plane',
-                    'ground',
-                ],
-                description: 'The type of mesh to create.',
-            },
-            name: {
-                type: 'string',
-                description:
-                    'Optional name for the mesh. Auto-generated if omitted.',
-            },
-            position: {
-                type: 'array',
-                items: { type: 'number' },
-                description:
-                    'Position as [x, y, z]. Defaults to [0, 1, 0] for most meshes.',
-            },
-            rotationDegrees: {
-                type: 'array',
-                items: { type: 'number' },
-                description:
-                    'Rotation in degrees as [x, y, z]. Preferred over rotation.',
-            },
-            rotation: {
-                type: 'array',
-                items: { type: 'number' },
-                description:
-                    'Rotation in radians as [x, y, z]. Prefer rotationDegrees instead.',
-            },
-            scale: {
-                type: 'array',
-                items: { type: 'number' },
-                description:
-                    'Scale multiplier as [x, y, z]. Defaults to [1, 1, 1]. Prefer size for initial dimensions.',
-            },
-            color: {
-                type: 'array',
-                items: { type: 'number' },
-                description:
-                    'Diffuse color as [r, g, b], each 0-1. Defaults to gray.',
-            },
-            size: {
-                type: 'object',
-                properties: {
-                    width: {
-                        type: 'number',
-                        description: 'Width (X axis). For box, plane, ground.',
-                    },
-                    height: {
-                        type: 'number',
-                        description:
-                            'Height (Y axis). For box, cylinder, cone, plane, ground.',
-                    },
-                    depth: {
-                        type: 'number',
-                        description: 'Depth (Z axis). For box.',
-                    },
-                    diameter: {
-                        type: 'number',
-                        description:
-                            'Diameter. For sphere, cylinder, cone, torus.',
-                    },
-                    thickness: {
-                        type: 'number',
-                        description: 'Tube thickness. For torus.',
-                    },
-                },
-                description:
-                    'Mesh dimensions. Fields vary by type: box(width,height,depth), sphere(diameter), cylinder/cone(height,diameter), torus(diameter,thickness), plane/ground(width,height).',
-            },
-        },
-        required: ['type'],
-    }),
-}
-
-const addLightTool = {
-    description: 'Create a new light source in the scene.',
-    inputSchema: jsonSchema<{
-        type: string
-        name?: string
-        position?: [number, number, number]
-        direction?: [number, number, number]
-        intensity?: number
-        color?: [number, number, number]
-    }>({
-        type: 'object',
-        properties: {
-            type: {
-                type: 'string',
-                enum: ['point', 'directional', 'spot', 'hemispheric'],
-                description: 'The type of light to create.',
-            },
-            name: {
-                type: 'string',
-                description: 'Optional name for the light.',
-            },
-            position: {
-                type: 'array',
-                items: { type: 'number' },
-                description: 'Position as [x, y, z]. Defaults to [0, 5, 0].',
-            },
-            direction: {
-                type: 'array',
-                items: { type: 'number' },
-                description:
-                    'Direction as [x, y, z]. Used by directional, spot, and hemispheric lights.',
-            },
-            intensity: {
-                type: 'number',
-                description: 'Light intensity. Default is 1.',
-            },
-            color: {
-                type: 'array',
-                items: { type: 'number' },
-                description: 'Diffuse color as [r, g, b], each 0-1.',
-            },
-        },
-        required: ['type'],
-    }),
-}
-
-const updateNodeTool = {
-    description:
-        'Update properties of an existing node in the scene. Use get_scene first to find node names.',
-    inputSchema: jsonSchema<{
-        name: string
-        position?: [number, number, number]
-        rotation?: [number, number, number]
-        rotationDegrees?: [number, number, number]
-        scale?: [number, number, number]
-        color?: [number, number, number]
-        intensity?: number
-        rename?: string
-    }>({
-        type: 'object',
-        properties: {
-            name: {
-                type: 'string',
-                description:
-                    'The name of the node to update. Must match exactly.',
-            },
-            position: {
-                type: 'array',
-                items: { type: 'number' },
-                description: 'New position as [x, y, z].',
-            },
-            rotationDegrees: {
-                type: 'array',
-                items: { type: 'number' },
-                description:
-                    'New rotation in degrees as [x, y, z]. Preferred over rotation.',
-            },
-            rotation: {
-                type: 'array',
-                items: { type: 'number' },
-                description:
-                    'New rotation in radians as [x, y, z]. Prefer rotationDegrees instead.',
-            },
-            scale: {
-                type: 'array',
-                items: { type: 'number' },
-                description: 'New scale as [x, y, z].',
-            },
-            color: {
-                type: 'array',
-                items: { type: 'number' },
-                description:
-                    'New color as [r, g, b], 0-1. Sets diffuseColor on meshes or diffuse on lights.',
-            },
-            intensity: {
-                type: 'number',
-                description: 'New intensity (lights only).',
-            },
-            rename: {
-                type: 'string',
-                description: 'Rename the node to this value.',
-            },
-        },
-        required: ['name'],
-    }),
-}
-
-const deleteNodeTool = {
-    description:
-        'Remove a node from the scene by name. Cannot delete the active camera.',
-    inputSchema: jsonSchema<{ name: string }>({
-        type: 'object',
-        properties: {
-            name: {
-                type: 'string',
-                description: 'The name of the node to delete.',
-            },
-        },
-        required: ['name'],
-    }),
-}
-
-const attachScriptTool = {
-    description:
-        'Attach a script to a node in the scene. The script file must already exist (use create_script first). Use get_scene to find node names.',
-    inputSchema: jsonSchema<{ node: string; script: string }>({
-        type: 'object',
-        properties: {
-            node: {
-                type: 'string',
-                description:
-                    'The name of the node to attach the script to. Must match exactly.',
-            },
-            script: {
-                type: 'string',
-                description:
-                    'The script file path (e.g. "scripts/rotate.ts"). Must already exist in the asset store.',
-            },
-        },
-        required: ['node', 'script'],
-    }),
-}
-
-const detachScriptTool = {
-    description:
-        'Detach (remove) a script from a node without deleting the script file.',
-    inputSchema: jsonSchema<{ node: string; script: string }>({
-        type: 'object',
-        properties: {
-            node: {
-                type: 'string',
-                description: 'The name of the node to detach the script from.',
-            },
-            script: {
-                type: 'string',
-                description: 'The script file path to detach.',
-            },
-        },
-        required: ['node', 'script'],
-    }),
-}
-
-const readScriptTool = {
-    description:
-        'Read the contents of a script file from the asset store. Use this before editing a script to see its current code.',
-    inputSchema: jsonSchema<{ path: string }>({
-        type: 'object',
-        properties: {
-            path: {
-                type: 'string',
-                description: 'The script file path (e.g. "scripts/rotate.ts").',
-            },
-        },
-        required: ['path'],
-    }),
-}
-
-const editScriptTool = {
-    description:
-        'Edit a script by find-and-replace. IMPORTANT: Always call read_script first so you have the exact current content. Provide `old_string` with the EXACT text to find (including whitespace, indentation, and newlines) and `new_string` with the replacement. Only the first occurrence is replaced. For multiple edits, call this tool multiple times.',
-    inputSchema: jsonSchema<{
-        path: string
-        old_string: string
-        new_string: string
-    }>({
-        type: 'object',
-        properties: {
-            path: {
-                type: 'string',
-                description: 'The script file path to edit.',
-            },
-            old_string: {
-                type: 'string',
-                description:
-                    'The exact text to find in the script. Must match exactly (including whitespace/indentation).',
-            },
-            new_string: {
-                type: 'string',
-                description: 'The replacement text.',
-            },
-        },
-        required: ['path', 'old_string', 'new_string'],
-    }),
-}
-
-const listScriptsTool = {
-    description:
-        'List all script files in the asset store. Returns an array of file paths. Use this to discover available scripts before reading or attaching them.',
-    inputSchema: jsonSchema<Record<string, never>>({
-        type: 'object',
-        properties: {},
-    }),
-}
-
-const deleteScriptTool = {
-    description:
-        'Delete a script file from the asset store. Also detaches it from any nodes that reference it.',
-    inputSchema: jsonSchema<{ path: string }>({
-        type: 'object',
-        properties: {
-            path: {
-                type: 'string',
-                description:
-                    'The script file path to delete (e.g. "scripts/rotate.ts").',
-            },
-        },
-        required: ['path'],
-    }),
-}
-
-const listAssetsTool = {
-    description:
-        'List all model files available in the asset store that can be imported into the scene. Returns file paths for .glb, .gltf, .obj models.',
-    inputSchema: jsonSchema<Record<string, never>>({
-        type: 'object',
-        properties: {},
-    }),
-}
-
-const importAssetTool = {
-    description:
-        'Import a 3D model from the asset store into the scene. The model file must already exist in the asset store (use list_assets to see available models). Supports .glb, .gltf, and .obj formats. OBJ files with .mtl materials and textures are handled automatically.',
-    inputSchema: jsonSchema<{
-        path: string
-        position?: [number, number, number]
-        scale?: [number, number, number]
-    }>({
-        type: 'object',
-        properties: {
-            path: {
-                type: 'string',
-                description:
-                    'The asset file path of the model (e.g. "models/car.glb"). Use list_assets to find available models.',
-            },
-            position: {
-                type: 'array',
-                items: { type: 'number' },
-                description:
-                    'Position to place the model at as [x, y, z]. Defaults to [0, 0, 0].',
-            },
-            scale: {
-                type: 'array',
-                items: { type: 'number' },
-                description: 'Scale as [x, y, z]. Defaults to [1, 1, 1].',
-            },
-        },
-        required: ['path'],
-    }),
-}
-
-const savePrefabTool = {
-    description:
-        'Save a scene node (including children) as a prefab file in the asset store. Defaults to prefabs/<node>.prefab.json unless a path is provided.',
-    inputSchema: jsonSchema<{
-        node: string
-        path?: string
-    }>({
-        type: 'object',
-        properties: {
-            node: {
-                type: 'string',
-                description: 'The exact scene node name to save as a prefab.',
-            },
-            path: {
-                type: 'string',
-                description:
-                    'Optional asset path for the prefab file (e.g. "prefabs/crate.prefab.json"). If omitted, uses prefabs/<node>.prefab.json.',
-            },
-        },
-        required: ['node'],
-    }),
-}
-
-const createGroupTool = {
-    description:
-        'Create an empty TransformNode group for organizing objects. Use set_parent to add children.',
-    inputSchema: jsonSchema<{
-        name: string
-        position?: [number, number, number]
-    }>({
-        type: 'object',
-        properties: {
-            name: {
-                type: 'string',
-                description: 'Name for the group node.',
-            },
-            position: {
-                type: 'array',
-                items: { type: 'number' },
-                description: 'Position as [x, y, z]. Defaults to [0, 0, 0].',
-            },
-        },
-        required: ['name'],
-    }),
-}
-
-const setParentTool = {
-    description:
-        'Set the parent of a node, making it a child of another node. Useful for grouping. Pass parent as null to unparent.',
-    inputSchema: jsonSchema<{
-        node: string
-        parent: string | null
-    }>({
-        type: 'object',
-        properties: {
-            node: {
-                type: 'string',
-                description: 'Name of the node to reparent.',
-            },
-            parent: {
-                type: ['string', 'null'] as unknown as 'string',
-                description:
-                    'Name of the new parent node, or null to unparent.',
-            },
-        },
-        required: ['node', 'parent'],
-    }),
-}
-
-const playSimulationTool = {
-    description:
-        'Start the game simulation. Scripts will run, physics will be active. Use stop_simulation to stop.',
-    inputSchema: jsonSchema<Record<string, never>>({
-        type: 'object',
-        properties: {},
-    }),
-}
-
-const stopSimulationTool = {
-    description:
-        'Stop the game simulation and restore the scene to its state before play.',
-    inputSchema: jsonSchema<Record<string, never>>({
-        type: 'object',
-        properties: {},
-    }),
-}
-
-const sleepTool = {
-    description:
-        'Wait for a number of seconds. Useful for runtime testing: start simulation, sleep, then check get_scene or get_console_logs. Max 30 seconds.',
-    inputSchema: jsonSchema<{ seconds: number }>({
-        type: 'object',
-        properties: {
-            seconds: {
-                type: 'number',
-                description:
-                    'Seconds to wait. Use 1–3 for typical script output checks.',
-            },
-        },
-        required: ['seconds'],
-    }),
-}
-
-const getConsoleLogsTool = {
-    description:
-        'Read the editor console logs. Scripts output via this.log() appears here. Use after sleep during play to inspect runtime output.',
-    inputSchema: jsonSchema<Record<string, never>>({
-        type: 'object',
-        properties: {},
-    }),
-}
-
-const bulkSceneTool = {
-    description:
-        'Execute multiple scene operations in one call. Use this for complex scene construction (building a house, landscape, etc). Operations run sequentially so later ones can reference nodes created by earlier ones. ALWAYS give explicit names to nodes you will reference later. Supported actions: add_mesh, add_light, update_node, delete_node, create_group, set_parent. Each operation uses the same parameters as the corresponding individual tool, plus an "action" field.',
-    inputSchema: jsonSchema<{
-        operations: Array<{ action: string; [key: string]: unknown }>
-    }>({
-        type: 'object',
-        properties: {
-            operations: {
-                type: 'array',
-                items: {
-                    type: 'object',
-                    properties: {
-                        action: {
-                            type: 'string',
-                            enum: [
-                                'add_mesh',
-                                'add_light',
-                                'update_node',
-                                'delete_node',
-                                'create_group',
-                                'set_parent',
-                            ],
-                            description: 'The operation type.',
-                        },
-                    },
-                    required: ['action'],
-                },
-                description:
-                    'Array of operations. Each has "action" plus that action\'s parameters (e.g. add_mesh operations take type, name, position, size, color, rotationDegrees, etc).',
-            },
-        },
-        required: ['operations'],
-    }),
-}
-
-// ── TypeScript type-checking ─────────────────────────────────────────
-
-function typeCheckScript(
-    scriptContent: string,
-    apiDtsContent: string
-): string[] {
-    const virtualScriptPath = '/virtual/script.ts'
-    const virtualApiPath = '/virtual/api.d.ts'
-
-    const virtualFiles = new Map<string, string>([
-        [virtualScriptPath, scriptContent],
-        [virtualApiPath, apiDtsContent],
-    ])
-
-    const options: ts.CompilerOptions = {
-        target: ts.ScriptTarget.ESNext,
-        module: ts.ModuleKind.ESNext,
-        strict: false,
-        noEmit: true,
-        skipLibCheck: true,
-    }
-
-    const host = ts.createCompilerHost(options)
-    const origGetSourceFile = host.getSourceFile.bind(host)
-    const origFileExists = host.fileExists.bind(host)
-    const origReadFile = host.readFile.bind(host)
-
-    host.getSourceFile = (fileName, languageVersion, onError) => {
-        const virtual = virtualFiles.get(fileName)
-        if (virtual !== undefined) {
-            return ts.createSourceFile(fileName, virtual, languageVersion)
-        }
-        return origGetSourceFile(fileName, languageVersion, onError)
-    }
-
-    host.fileExists = (fileName) => {
-        if (virtualFiles.has(fileName)) return true
-        return origFileExists(fileName)
-    }
-
-    host.readFile = (fileName) => {
-        const virtual = virtualFiles.get(fileName)
-        if (virtual !== undefined) return virtual
-        return origReadFile(fileName)
-    }
-
-    const program = ts.createProgram(
-        [virtualScriptPath, virtualApiPath],
-        options,
-        host
-    )
-
-    const diagnostics = ts
-        .getPreEmitDiagnostics(program)
-        .filter(
-            (d) =>
-                d.file?.fileName === virtualScriptPath &&
-                d.category === ts.DiagnosticCategory.Error
-        )
-
-    return diagnostics.map((d) => {
-        const line = d.file
-            ? ts.getLineAndCharacterOfPosition(d.file, d.start!).line + 1
-            : '?'
-        const msg = ts.flattenDiagnosticMessageText(d.messageText, ' ')
-        return `Line ${line}: ${msg}`
-    })
-}
-
-// ── Plugin ──────────────────────────────────────────────────────────
 
 export function chatApiPlugin(): Plugin {
     return {
@@ -912,30 +130,14 @@ export function chatApiPlugin(): Plugin {
                         model: azure(
                             env.AZURE_OPENAI_DEPLOYMENT ?? 'gpt-5.2-chat'
                         ),
-                        system: buildSystemPrompt(server.config.root),
+                        system: buildCoordinatorSystemPrompt(),
                         tools: {
-                            create_script: createScriptTool,
                             get_scene: getSceneTool,
-                            add_mesh: addMeshTool,
-                            add_light: addLightTool,
-                            update_node: updateNodeTool,
-                            delete_node: deleteNodeTool,
-                            create_group: createGroupTool,
-                            set_parent: setParentTool,
-                            bulk_scene: bulkSceneTool,
-                            attach_script: attachScriptTool,
-                            detach_script: detachScriptTool,
-                            read_script: readScriptTool,
-                            edit_script: editScriptTool,
-                            list_scripts: listScriptsTool,
-                            delete_script: deleteScriptTool,
-                            list_assets: listAssetsTool,
-                            import_asset: importAssetTool,
-                            save_prefab: savePrefabTool,
                             play_simulation: playSimulationTool,
                             stop_simulation: stopSimulationTool,
                             sleep: sleepTool,
                             get_console_logs: getConsoleLogsTool,
+                            spawn_agent: spawnAgentTool,
                         },
                         messages: modelMessages,
                     })
@@ -966,6 +168,110 @@ export function chatApiPlugin(): Plugin {
                                     error instanceof Error
                                         ? error.message
                                         : 'Internal server error',
+                            })
+                        )
+                    }
+                }
+            })
+
+            server.middlewares.use('/api/subagent', async (req, res) => {
+                if (req.method !== 'POST') {
+                    res.statusCode = 405
+                    res.end('Method Not Allowed')
+                    return
+                }
+
+                try {
+                    const body = await new Promise<string>((resolve) => {
+                        let data = ''
+                        req.on('data', (chunk: Buffer) => {
+                            data += chunk.toString()
+                        })
+                        req.on('end', () => resolve(data))
+                    })
+
+                    const { messages, agentType } = JSON.parse(body) as {
+                        messages: SubagentMessage[]
+                        agentType: 'scene' | 'script'
+                    }
+
+                    const isScriptAgent = agentType === 'script'
+
+                    const system = isScriptAgent
+                        ? buildScriptAgentSystemPrompt(server.config.root)
+                        : buildSceneAgentSystemPrompt()
+
+                    const tools = isScriptAgent
+                        ? {
+                              get_scene: getSceneTool,
+                              list_scripts: listScriptsTool,
+                              create_script: createScriptTool,
+                              read_script: readScriptTool,
+                              edit_script: editScriptTool,
+                              delete_script: deleteScriptTool,
+                              attach_script: attachScriptTool,
+                              detach_script: detachScriptTool,
+                              play_simulation: playSimulationTool,
+                              stop_simulation: stopSimulationTool,
+                              sleep: sleepTool,
+                              get_console_logs: getConsoleLogsTool,
+                          }
+                        : {
+                              get_scene: getSceneTool,
+                              add_mesh: addMeshTool,
+                              add_light: addLightTool,
+                              update_node: updateNodeTool,
+                              delete_node: deleteNodeTool,
+                              create_group: createGroupTool,
+                              set_parent: setParentTool,
+                              bulk_scene: bulkSceneTool,
+                              list_assets: listAssetsTool,
+                              import_asset: importAssetTool,
+                              save_prefab: savePrefabTool,
+                          }
+
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const result = await generateText({
+                        model: azure(
+                            env.AZURE_OPENAI_DEPLOYMENT ?? 'gpt-5.2-chat'
+                        ),
+                        system,
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        tools: tools as any,
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        messages: messages as any,
+                    })
+
+                    type AnyToolCall = {
+                        toolCallId: string
+                        toolName: string
+                        input: unknown
+                    }
+                    const response = {
+                        text: result.text,
+                        toolCalls: (
+                            result.toolCalls as unknown as AnyToolCall[]
+                        ).map((tc) => ({
+                            toolCallId: tc.toolCallId,
+                            toolName: tc.toolName,
+                            args: tc.input,
+                        })),
+                        finishReason: result.finishReason,
+                    }
+
+                    res.setHeader('Content-Type', 'application/json')
+                    res.end(JSON.stringify(response))
+                } catch (error) {
+                    console.error('[subagent]', error)
+                    if (!res.headersSent) {
+                        res.statusCode = 500
+                        res.setHeader('Content-Type', 'application/json')
+                        res.end(
+                            JSON.stringify({
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : 'Subagent error',
                             })
                         )
                     }

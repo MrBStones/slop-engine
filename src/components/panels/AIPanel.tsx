@@ -300,6 +300,24 @@ function ToolCallIndicator(props: Readonly<{ part: ToolUIPart }>) {
                 if (isError()) return 'Failed to read console'
                 if (isDone()) return 'Read console logs'
                 return 'Reading console…'
+            case 'spawn_agent': {
+                const agentType = inp?.agentType as string | undefined
+                const task = inp?.task as string | undefined
+                const typeLabel =
+                    agentType === 'script'
+                        ? 'Script Writer'
+                        : agentType === 'scene'
+                        ? 'Scene Builder'
+                        : 'Agent'
+                const short = task
+                    ? task.length > 50
+                        ? task.slice(0, 47) + '…'
+                        : task
+                    : 'task'
+                if (isError()) return `${typeLabel} failed: ${short}`
+                if (isDone()) return `${typeLabel} done: ${short}`
+                return `${typeLabel} running: ${short}…`
+            }
             default:
                 if (isDone()) return `Ran ${name}`
                 return `Running ${name}…`
@@ -1118,6 +1136,143 @@ export default function AIPanel(
         return JSON.stringify(formatted, null, 2)
     }
 
+    // ── Subagent loop ────────────────────────────────────────────────
+
+    interface SubagentStep {
+        text: string
+        toolCalls: Array<{
+            toolCallId: string
+            toolName: string
+            args: unknown
+        }>
+        finishReason: string
+        error?: string
+    }
+
+    type SubagentMessage =
+        | { role: 'user'; content: string }
+        | {
+              role: 'assistant'
+              content: Array<
+                  | { type: 'text'; text: string }
+                  | {
+                        type: 'tool-call'
+                        toolCallId: string
+                        toolName: string
+                        // AI SDK v5 uses 'input' not 'args' for CoreMessage tool-call
+                        input: unknown
+                    }
+              >
+          }
+        | {
+              role: 'tool'
+              content: Array<{
+                  type: 'tool-result'
+                  toolCallId: string
+                  toolName: string
+                  // AI SDK v5 uses { output: { type, value } } not { result }
+                  output: { type: 'text'; value: string }
+              }>
+          }
+
+    const MAX_AGENT_STEPS = 20
+
+    const executeSpawnAgent = async (args: {
+        agentType: 'scene' | 'script'
+        task: string
+        context?: string
+    }): Promise<string> => {
+        const userContent = args.context
+            ? `${args.task}\n\nContext:\n${args.context}`
+            : args.task
+
+        const messages: SubagentMessage[] = [
+            { role: 'user', content: userContent },
+        ]
+
+        const actionsLog: string[] = []
+        let finalText = ''
+
+        for (let step = 0; step < MAX_AGENT_STEPS; step++) {
+            const res = await fetch('/api/subagent', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ messages, agentType: args.agentType }),
+            })
+
+            if (!res.ok) {
+                const err = (await res.json().catch(() => ({}))) as {
+                    error?: string
+                }
+                throw new Error(
+                    err.error ?? `Subagent request failed (${res.status})`
+                )
+            }
+
+            const data = (await res.json()) as SubagentStep
+
+            // Build assistant message content
+            const assistantContent: Extract<
+                SubagentMessage,
+                { role: 'assistant' }
+            >['content'] = []
+            if (data.text) {
+                assistantContent.push({ type: 'text', text: data.text })
+                finalText = data.text
+            }
+            for (const tc of data.toolCalls) {
+                assistantContent.push({
+                    type: 'tool-call',
+                    toolCallId: tc.toolCallId,
+                    toolName: tc.toolName,
+                    input: tc.args,
+                })
+            }
+            if (assistantContent.length > 0) {
+                messages.push({ role: 'assistant', content: assistantContent })
+            }
+
+            // If no tool calls, the agent is done
+            if (data.toolCalls.length === 0) break
+
+            // Execute all tool calls from this step
+            const toolResults: Extract<
+                SubagentMessage,
+                { role: 'tool' }
+            >['content'] = []
+            for (const tc of data.toolCalls) {
+                let result: string
+                try {
+                    result = await executeTool(tc.toolName, tc.args)
+                    actionsLog.push(`${tc.toolName}: ${result}`)
+                } catch (err) {
+                    result = `Error: ${
+                        err instanceof Error ? err.message : String(err)
+                    }`
+                    actionsLog.push(`${tc.toolName} FAILED: ${result}`)
+                }
+                toolResults.push({
+                    type: 'tool-result',
+                    toolCallId: tc.toolCallId,
+                    toolName: tc.toolName,
+                    output: { type: 'text', value: result },
+                })
+            }
+            messages.push({ role: 'tool', content: toolResults })
+
+            if (data.finishReason === 'stop') break
+        }
+
+        // Build summary for the coordinator
+        const lines: string[] = []
+        if (finalText) lines.push(finalText)
+        if (actionsLog.length > 0) {
+            lines.push(`\nActions taken (${actionsLog.length}):`)
+            lines.push(...actionsLog.map((a) => `  • ${a}`))
+        }
+        return lines.join('\n') || 'Agent completed with no output.'
+    }
+
     const executeTool = async (
         toolName: string,
         input: unknown
@@ -1191,6 +1346,14 @@ export default function AIPanel(
                 return executeSleep(input as { seconds: number })
             case 'get_console_logs':
                 return executeGetConsoleLogs()
+            case 'spawn_agent':
+                return executeSpawnAgent(
+                    input as {
+                        agentType: 'scene' | 'script'
+                        task: string
+                        context?: string
+                    }
+                )
             default:
                 throw new Error(`Unknown tool: ${toolName}`)
         }
