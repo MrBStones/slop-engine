@@ -1,6 +1,7 @@
 import type { Plugin } from 'vite'
 import { loadEnv } from 'vite'
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
+import { createAzure } from '@ai-sdk/azure'
 import {
     streamText,
     convertToModelMessages,
@@ -836,8 +837,9 @@ export function chatApiPlugin(): Plugin {
                 ''
             )
 
-            const openrouter = createOpenRouter({
-                apiKey: env.OPENROUTER_API_KEY,
+            const azure = createAzure({
+                apiKey: env.AZURE_OPENAI_API_KEY,
+                resourceName: env.AZURE_OPENAI_RESOURCE_NAME,
             })
 
             const apiDtsContent = readFileSync(
@@ -907,8 +909,8 @@ export function chatApiPlugin(): Plugin {
                     const modelMessages = await convertToModelMessages(messages)
 
                     const result = streamText({
-                        model: openrouter.chat(
-                            env.OPENROUTER_MODEL ?? 'arcee-ai/trinity-large-preview:free'
+                        model: azure(
+                            env.AZURE_OPENAI_DEPLOYMENT ?? 'gpt-5.2-chat'
                         ),
                         system: buildSystemPrompt(server.config.root),
                         tools: {

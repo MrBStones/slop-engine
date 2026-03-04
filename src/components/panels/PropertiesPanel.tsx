@@ -37,14 +37,26 @@ import type { ScriptNodeType } from '../../scripting/Script'
 
 const fmt = (v: number | undefined) => v?.toFixed(3)
 
+const sectionHeaderClass =
+    'border-b border-gray-700/40 pb-1 -mx-1 px-1'
+const sectionContentClass = 'pl-2 pt-0.5 pb-2 border-l border-gray-700/50 ml-1'
+const propertyGroupClass =
+    'rounded bg-gray-900/50 border border-gray-700/30 px-2 py-1.5'
+
 function TransformProperties(
     props: Readonly<{ node: () => TransformNode | undefined }>
 ) {
     return (
-        <Collapsible title="Transform">
+        <Collapsible
+            title="Transform"
+            headerClass={sectionHeaderClass}
+            contentClass={sectionContentClass}
+        >
             <div class="flex flex-col gap-2">
-                <div>
-                    <div class="text-xs text-gray-400 mb-1">Position</div>
+                <div class={propertyGroupClass}>
+                    <div class="text-xs font-medium text-gray-400 mb-1">
+                        Position
+                    </div>
                     <Vector3Input
                         value={() => props.node()?.position}
                         onChange={(axis, value) => {
@@ -53,8 +65,10 @@ function TransformProperties(
                         }}
                     />
                 </div>
-                <div>
-                    <div class="text-xs text-gray-400 mb-1">Rotation</div>
+                <div class={propertyGroupClass}>
+                    <div class="text-xs font-medium text-gray-400 mb-1">
+                        Rotation
+                    </div>
                     <Vector3Input
                         value={() => props.node()?.rotation}
                         onChange={(axis, value) => {
@@ -63,8 +77,10 @@ function TransformProperties(
                         }}
                     />
                 </div>
-                <div>
-                    <div class="text-xs text-gray-400 mb-1">Scale</div>
+                <div class={propertyGroupClass}>
+                    <div class="text-xs font-medium text-gray-400 mb-1">
+                        Scale
+                    </div>
                     <Vector3Input
                         value={() => props.node()?.scaling}
                         onChange={(axis, value) => {
@@ -84,8 +100,12 @@ function MaterialProperties(props: Readonly<{ node: () => Mesh | undefined }>) {
 
     return (
         <Show when={material()}>
-            <Collapsible title="Material">
-                <div class="flex flex-col gap-2 pb-2">
+            <Collapsible
+                title="Material"
+                headerClass={sectionHeaderClass}
+                contentClass={sectionContentClass}
+            >
+                <div class="flex flex-col gap-2 pt-0.5">
                     <Color3Input
                         label="Diffuse"
                         value={() => material()?.diffuseColor}
@@ -277,13 +297,13 @@ function ScriptProperties(
         return t ? `${path}  [${t}]` : path
     }
 
-    // Auto-select when there's only one available script
+    // Default to first available script so Add works without manual selection
     createEffect(() => {
         const avail = availableScripts()
-        if (avail.length === 1) {
-            setAddPath(avail[0])
-        } else if (!avail.includes(addPath())) {
+        if (avail.length === 0) {
             setAddPath('')
+        } else if (!avail.includes(addPath())) {
+            setAddPath(avail[0])
         }
     })
 
@@ -310,50 +330,73 @@ function ScriptProperties(
     }
 
     return (
-        <Collapsible title="Scripts">
-            <div class="flex flex-col gap-2 pb-2">
-                <For each={attachedScripts()}>
-                    {(path) => (
-                        <div class="flex items-center justify-between bg-gray-800 rounded px-2 py-1 text-xs">
-                            <button
-                                type="button"
-                                class="text-blue-400 hover:text-blue-300 truncate text-left flex-1"
-                                onClick={() => openScriptFile(path)}
-                                title="Open in editor"
-                            >
-                                {path}
-                            </button>
-                            <button
-                                type="button"
-                                class="text-gray-500 hover:text-red-400 ml-2 shrink-0"
-                                onClick={() => removeScript(path)}
-                                title="Remove script"
-                            >
-                                ✕
-                            </button>
-                        </div>
-                    )}
-                </For>
+        <Collapsible
+            title="Scripts"
+            headerClass={sectionHeaderClass}
+            contentClass={sectionContentClass}
+        >
+            <div class="flex flex-col gap-2 pt-0.5">
                 <Show when={availableScripts().length > 0}>
-                    <div class="flex gap-1">
-                        <Select
-                            options={availableScripts().map((p) => ({
-                                value: p,
-                                label: scriptLabel(p),
-                            }))}
-                            placeholder="Add script..."
-                            value={addPath()}
-                            onChange={(e) => setAddPath(e.currentTarget.value)}
-                            class="py-1! text-xs!"
-                        />
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={addScript}
-                            disabled={!addPath()}
-                        >
-                            +
-                        </Button>
+                    <div class={propertyGroupClass}>
+                        <div class="text-xs font-medium text-gray-400 mb-1">
+                            Add script
+                        </div>
+                        <div class="flex gap-2">
+                            <Select
+                                options={availableScripts().map((p) => ({
+                                    value: p,
+                                    label: scriptLabel(p),
+                                }))}
+                                placeholder="Choose script..."
+                                value={addPath()}
+                                onChange={(e) =>
+                                    setAddPath(e.currentTarget.value)
+                                }
+                                class="flex-1 py-1.5! text-xs!"
+                            />
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={addScript}
+                                disabled={!addPath()}
+                                class="shrink-0"
+                            >
+                                Add
+                            </Button>
+                        </div>
+                    </div>
+                </Show>
+                <Show when={attachedScripts().length > 0}>
+                    <div class={propertyGroupClass}>
+                        <div class="text-xs font-medium text-gray-400 mb-1">
+                            Attached
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            <For each={attachedScripts()}>
+                                {(path) => (
+                                    <div class="flex items-center justify-between gap-2 rounded bg-gray-800/50 px-2 py-1 text-xs">
+                                        <button
+                                            type="button"
+                                            class="text-blue-400 hover:text-blue-300 truncate text-left flex-1 min-w-0"
+                                            onClick={() =>
+                                                openScriptFile(path)
+                                            }
+                                            title="Open in editor"
+                                        >
+                                            {path}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="text-gray-500 hover:text-red-400 shrink-0 p-0.5"
+                                            onClick={() => removeScript(path)}
+                                            title="Remove script"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+                                )}
+                            </For>
+                        </div>
                     </div>
                 </Show>
                 <Show
@@ -386,25 +429,46 @@ export default function PropertiesPanel(
     return (
         <>
             <h2 class="text-sm font-semibold text-gray-200 mb-2">Properties</h2>
-            <div class="flex flex-col gap-1">
+            <div class="flex flex-col gap-2 pb-2">
                 <Show when={props.node()}>
-                    <Input
-                        label="Name"
-                        value={props.node()?.name}
-                        onChange={(e) => {
-                            props.node()!.name = e.currentTarget.value
-                            props.setNodeTick((t) => t + 1)
-                        }}
-                    />
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                        Class: {props.node()?.getClassName()}
-                    </label>
+                    <div class={propertyGroupClass}>
+                        <div class="flex flex-col gap-2">
+                            <Input
+                                label="Name"
+                                value={props.node()?.name}
+                                onChange={(e) => {
+                                    props.node()!.name = e.currentTarget.value
+                                    props.setNodeTick((t) => t + 1)
+                                }}
+                            />
+                            <div>
+                                <span class="text-xs font-medium text-gray-400">
+                                    Class
+                                </span>
+                                <p class="text-sm text-gray-200 mt-0.5">
+                                    {props.node()?.getClassName()}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
                 </Show>
                 <Show when={props.node() instanceof TransformNode}>
                     <TransformProperties node={transformNode} />
                 </Show>
+                <Show when={props.node()}>
+                    <ScriptProperties
+                        node={() => props.node()}
+                        scriptAssets={props.scriptAssets}
+                        setNodeTick={props.setNodeTick}
+                    />
+                </Show>
                 <Show when={props.node() instanceof Mesh}>
-                    <Collapsible title="Physics">
+                    <Collapsible
+                        title="Physics"
+                        headerClass={sectionHeaderClass}
+                        contentClass={sectionContentClass}
+                    >
+                        <div class="flex flex-col gap-2 pt-0.5">
                         <Checkbox
                             label="Enabled"
                             checked={meshNode()?.metadata?.physicsEnabled}
@@ -429,9 +493,14 @@ export default function PropertiesPanel(
                                     )
                             }}
                         />
+                        </div>
                     </Collapsible>
-                    <Collapsible title="Rendering">
-                        <div class="flex flex-col gap-2">
+                    <Collapsible
+                        title="Rendering"
+                        headerClass={sectionHeaderClass}
+                        contentClass={sectionContentClass}
+                    >
+                        <div class="flex flex-col gap-2 pt-0.5">
                             <Input
                                 label="Visibility"
                                 type="number"
@@ -491,7 +560,11 @@ export default function PropertiesPanel(
                 <Switch>
                     <Match when={props.node() instanceof Light}>
                         <>
-                            <Collapsible title="Transform">
+                            <Collapsible
+                                title="Transform"
+                                contentClass={sectionContentClass}
+                            >
+                                <div class="pt-0.5">
                                 <Vector3Input
                                     value={() => lightNode()?.position}
                                     onChange={(axis, value) => {
@@ -499,10 +572,15 @@ export default function PropertiesPanel(
                                         if (l) l.position[axis] = value
                                     }}
                                 />
+                                </div>
                             </Collapsible>
 
-                            <Collapsible title="Light">
-                                <div class="flex flex-col gap-2">
+                            <Collapsible
+                                title="Light"
+                                headerClass={sectionHeaderClass}
+                                contentClass={sectionContentClass}
+                            >
+                                <div class="flex flex-col gap-2 pt-0.5">
                                     <Input
                                         label="Intensity"
                                         type="number"
@@ -606,7 +684,11 @@ export default function PropertiesPanel(
                     </Match>
                     <Match when={props.node() instanceof Camera}>
                         <>
-                            <Collapsible title="Transform">
+                            <Collapsible
+                                title="Transform"
+                                contentClass={sectionContentClass}
+                            >
+                                <div class="pt-0.5">
                                 <Vector3Input
                                     value={() => cameraNode()?.position}
                                     onChange={(axis, value) => {
@@ -614,9 +696,14 @@ export default function PropertiesPanel(
                                         if (c) c.position[axis] = value
                                     }}
                                 />
+                                </div>
                             </Collapsible>
-                            <Collapsible title="Camera">
-                                <div class="flex flex-col gap-2">
+                            <Collapsible
+                                title="Camera"
+                                headerClass={sectionHeaderClass}
+                                contentClass={sectionContentClass}
+                            >
+                                <div class="flex flex-col gap-2 pt-0.5">
                                     <Input
                                         label="FOV"
                                         type="number"
@@ -694,13 +781,6 @@ export default function PropertiesPanel(
                         </>
                     </Match>
                 </Switch>
-                <Show when={props.node()}>
-                    <ScriptProperties
-                        node={() => props.node()}
-                        scriptAssets={props.scriptAssets}
-                        setNodeTick={props.setNodeTick}
-                    />
-                </Show>
             </div>
         </>
     )

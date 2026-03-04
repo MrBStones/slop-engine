@@ -52,6 +52,21 @@
     background: var(--color-gray-600);
 }
 
+/* Dark panel scrollbar (Properties, Scene, etc.) */
+.panel-scrollbar::-webkit-scrollbar {
+    width: 6px;
+}
+.panel-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+.panel-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--color-gray-600);
+    border-radius: 3px;
+}
+.panel-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: var(--color-gray-500);
+}
+
 /* ── Markdown content in AI chat ─────────────────────────────────── */
 
 .md-content {

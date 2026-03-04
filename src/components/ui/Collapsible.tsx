@@ -3,12 +3,16 @@ import { JSX, createSignal, splitProps } from 'solid-js'
 export interface CollapsibleProps extends JSX.HTMLAttributes<HTMLDivElement> {
     title: string
     defaultOpen?: boolean
+    contentClass?: string
+    headerClass?: string
 }
 
 export function Collapsible(props: CollapsibleProps) {
     const [local, rest] = splitProps(props, [
         'title',
         'defaultOpen',
+        'contentClass',
+        'headerClass',
         'class',
         'children',
     ])
@@ -19,12 +23,13 @@ export function Collapsible(props: CollapsibleProps) {
         <div class={local.class ?? ''} {...rest}>
             <button
                 type="button"
-                class="
+                class={`
                     flex items-center justify-between w-full
                     py-1 text-sm font-medium text-gray-500 dark:text-gray-400
                     hover:text-gray-700 dark:hover:text-gray-200
                     transition-colors duration-150
-                "
+                    ${local.headerClass ?? ''}
+                `}
                 onClick={() => setOpen((prev) => !prev)}
             >
                 <span>{local.title}</span>
@@ -48,7 +53,7 @@ export function Collapsible(props: CollapsibleProps) {
             <div
                 class={`overflow-hidden transition-all duration-200 ${
                     open() ? 'h-full opacity-100' : 'max-h-0 opacity-0'
-                }`}
+                } ${local.contentClass ?? ''}`}
             >
                 {local.children}
             </div>
