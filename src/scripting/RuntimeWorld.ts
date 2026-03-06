@@ -16,6 +16,7 @@ import { pushLog } from './consoleStore'
 import type { CollisionCallback, CollisionEvent } from './Script'
 import { getBlob } from '../assetStore'
 import { instantiatePrefabInScene } from '../scene/SceneOperations'
+import { GUIManager } from './GUIManager'
 
 /** Options for creating a primitive mesh at runtime. */
 export interface SpawnPrimitiveOptions {
@@ -57,6 +58,12 @@ export class RuntimeWorld {
     private _runtimeNodes: Set<Node> = new Set()
     private _physicsAggregates: Map<Mesh, PhysicsAggregate> = new Map()
     private _counter = 0
+    private _gui: GUIManager
+
+    /** The GUI manager for this play session. */
+    get gui(): GUIManager {
+        return this._gui
+    }
 
     /**
      * Maps a mesh uniqueId to the collision callbacks registered for that mesh.
@@ -69,6 +76,7 @@ export class RuntimeWorld {
 
     constructor(scene: Scene) {
         this._scene = scene
+        this._gui = new GUIManager(scene)
     }
 
     private _nextName(prefix: string): string {
@@ -224,7 +232,10 @@ export class RuntimeWorld {
     }
 
     /** Spawn a prefab asset from the asset store. Returns the root node. */
-    async spawnPrefab(path: string, options?: SpawnPrefabOptions): Promise<Node> {
+    async spawnPrefab(
+        path: string,
+        options?: SpawnPrefabOptions
+    ): Promise<Node> {
         const blob = await getBlob(path)
         if (!blob) {
             throw new Error(`Prefab not found: "${path}"`)
@@ -517,5 +528,7 @@ export class RuntimeWorld {
             node.dispose()
         }
         this._runtimeNodes.clear()
+
+        this._gui.dispose()
     }
 }

@@ -35,10 +35,10 @@ Use \`size\` to set dimensions directly instead of scale:
 - \`get_scene\` — snapshot of all nodes (positions, colours, hierarchy, simulation state)
 - \`add_mesh\` — create a mesh. Required: \`type\`. Optional: \`name\`, \`position\`, \`rotationDegrees\`, \`scale\`, \`color\`, \`size\`
 - \`add_light\` — create a light. Required: \`type\`. Optional: \`name\`, \`position\`, \`direction\`, \`intensity\`, \`color\`
-- \`update_node\` — move/resize/recolour/rename an existing node.
-- \`delete_node\` — remove a node.
-- \`create_group\` — empty container node.
-- \`set_parent\` — reparent a node (or pass null to unparent).
+- \`update_node\` — move/resize/recolour/rename an existing node. Required: \`name\`.
+- \`delete_node\` — remove a node. Required: \`name\`.
+- \`create_group\` — empty container node. Required: \`name\`.
+- \`set_parent\` — reparent a node (or pass null to unparent). Required: \`node\`, \`parent\`.
 - \`bulk_scene\` — batch of add_mesh / add_light / update_node / delete_node / create_group / set_parent. Each operation must have \`action\` plus that action's params. Use arrays for position/scale/color (e.g. \`[0, 1, 0]\`), not strings. Do not include checkCollisions or capsule type.
 - \`list_assets\` — list importable .glb/.gltf/.obj models.
 - \`import_asset\` — import a model into the scene.

@@ -1,0 +1,286 @@
+import { Scene } from 'babylonjs'
+import {
+    AdvancedDynamicTexture,
+    Button,
+    TextBlock,
+    Control,
+} from '@babylonjs/gui'
+
+/** Options shared by all GUI controls. */
+export interface GuiControlOptions {
+    /** Horizontal position. CSS-style string ("20px", "50%") or pixel number. Default: "0px". */
+    left?: string | number
+    /** Vertical position. CSS-style string ("20px", "50%") or pixel number. Default: "0px". */
+    top?: string | number
+    /** Width. CSS-style string ("200px", "20%") or pixel number. Default: "200px". */
+    width?: string | number
+    /** Height. CSS-style string ("40px") or pixel number. Default: "40px". */
+    height?: string | number
+    /** Horizontal alignment: "left" | "center" | "right". Default: "center". */
+    horizontalAlignment?: 'left' | 'center' | 'right'
+    /** Vertical alignment: "top" | "center" | "bottom". Default: "center". */
+    verticalAlignment?: 'top' | 'center' | 'bottom'
+}
+
+/** Options for creating a GUI button. */
+export interface GuiButtonOptions extends GuiControlOptions {
+    /** Background color (CSS string, e.g. "#336699" or "rgba(0,0,0,0.5)"). Default: "#2a6496". */
+    color?: string
+    /** Text color. Default: "white". */
+    textColor?: string
+    /** Font size in pixels. Default: 16. */
+    fontSize?: number
+    /** Corner radius in pixels. Default: 4. */
+    cornerRadius?: number
+}
+
+/** Options for creating a GUI text label. */
+export interface GuiLabelOptions extends GuiControlOptions {
+    /** Text color. Default: "white". */
+    color?: string
+    /** Font size in pixels. Default: 16. */
+    fontSize?: number
+    /** Text alignment: "left" | "center" | "right". Default: "center". */
+    textAlignment?: 'left' | 'center' | 'right'
+    /** Whether to enable text wrapping. Default: true. */
+    wordWrap?: boolean
+}
+
+const H_ALIGN_MAP = {
+    left: Control.HORIZONTAL_ALIGNMENT_LEFT,
+    center: Control.HORIZONTAL_ALIGNMENT_CENTER,
+    right: Control.HORIZONTAL_ALIGNMENT_RIGHT,
+} as const
+
+const V_ALIGN_MAP = {
+    top: Control.VERTICAL_ALIGNMENT_TOP,
+    center: Control.VERTICAL_ALIGNMENT_CENTER,
+    bottom: Control.VERTICAL_ALIGNMENT_BOTTOM,
+} as const
+
+function toPx(value: string | number | undefined, fallback: string): string {
+    if (value === undefined) return fallback
+    if (typeof value === 'number') return `${value}px`
+    return value
+}
+
+/** Handle returned by `createButton`. Use it to respond to clicks and update the button. */
+export class GuiButtonHandle {
+    private readonly _button: Button
+    private readonly _manager: GUIManager
+
+    /** @internal */
+    constructor(button: Button, manager: GUIManager) {
+        this._button = button
+        this._manager = manager
+    }
+
+    /** Register a callback that fires when the button is clicked. Returns `this` for chaining. */
+    onClick(callback: () => void): this {
+        this._button.onPointerClickObservable.add(callback)
+        return this
+    }
+
+    /** Change the button's label text. */
+    setText(text: string): this {
+        if (this._button.textBlock) {
+            this._button.textBlock.text = text
+        }
+        return this
+    }
+
+    /** Show or hide the button. */
+    setVisible(visible: boolean): this {
+        this._button.isVisible = visible
+        return this
+    }
+
+    /** Set button background color (CSS string). */
+    setColor(color: string): this {
+        this._button.background = color
+        return this
+    }
+
+    /** Remove this button from the GUI. */
+    remove(): void {
+        this._manager._removeControl(this._button)
+    }
+}
+
+/** Handle returned by `createLabel`. Use it to update the label text at runtime. */
+export class GuiLabelHandle {
+    private readonly _text: TextBlock
+    private readonly _manager: GUIManager
+
+    /** @internal */
+    constructor(text: TextBlock, manager: GUIManager) {
+        this._text = text
+        this._manager = manager
+    }
+
+    /** Change the displayed text. */
+    setText(text: string): this {
+        this._text.text = text
+        return this
+    }
+
+    /** Show or hide the label. */
+    setVisible(visible: boolean): this {
+        this._text.isVisible = visible
+        return this
+    }
+
+    /** Set the text color (CSS string). */
+    setColor(color: string): this {
+        this._text.color = color
+        return this
+    }
+
+    /** Remove this label from the GUI. */
+    remove(): void {
+        this._manager._removeControl(this._text)
+    }
+}
+
+/**
+ * Manages a fullscreen BabylonJS GUI overlay for use during play mode.
+ *
+ * Accessed via `this.gui` inside scripts. All controls are automatically
+ * disposed when play mode stops.
+ */
+export class GUIManager {
+    private readonly _texture: AdvancedDynamicTexture
+    private _controls: Control[] = []
+
+    constructor(scene: Scene) {
+        // @babylonjs/gui expects @babylonjs/core types; cast to bridge the legacy bundle mismatch.
+        this._texture = AdvancedDynamicTexture.CreateFullscreenUI(
+            '__slopEngineGui__',
+            true,
+            scene as any
+        )
+    }
+
+    /**
+     * Create a clickable button on the screen.
+     *
+     * @param name     Internal name for the control.
+     * @param text     Label text on the button.
+     * @param options  Position, size, color, etc.
+     * @returns A {@link GuiButtonHandle} for reacting to clicks and updating the button.
+     *
+     * @example
+     * start() {
+     *     const btn = this.gui.createButton('jumpBtn', 'Jump', {
+     *         left: '20px', top: '-60px',
+     *         horizontalAlignment: 'left',
+     *         verticalAlignment: 'bottom',
+     *     })
+     *     btn.onClick(() => this.log('Jumped!'))
+     * }
+     */
+    createButton(
+        name: string,
+        text: string,
+        options?: GuiButtonOptions
+    ): GuiButtonHandle {
+        const btn = Button.CreateSimpleButton(name, text)
+
+        btn.width = toPx(options?.width, '200px')
+        btn.height = toPx(options?.height, '40px')
+        btn.left = toPx(options?.left, '0px')
+        btn.top = toPx(options?.top, '0px')
+        btn.background = options?.color ?? '#2a6496'
+        btn.cornerRadius = options?.cornerRadius ?? 4
+        btn.horizontalAlignment =
+            H_ALIGN_MAP[options?.horizontalAlignment ?? 'center']
+        btn.verticalAlignment =
+            V_ALIGN_MAP[options?.verticalAlignment ?? 'center']
+
+        if (btn.textBlock) {
+            btn.textBlock.color = options?.textColor ?? 'white'
+            btn.textBlock.fontSize = options?.fontSize ?? 16
+        }
+
+        this._texture.addControl(btn)
+        this._controls.push(btn)
+
+        return new GuiButtonHandle(btn, this)
+    }
+
+    /**
+     * Create a text label on the screen.
+     *
+     * @param name     Internal name for the control.
+     * @param text     Initial text to display.
+     * @param options  Position, size, color, etc.
+     * @returns A {@link GuiLabelHandle} for updating the text at runtime.
+     *
+     * @example
+     * start() {
+     *     this._scoreLabel = this.gui.createLabel('score', 'Score: 0', {
+     *         top: '20px',
+     *         verticalAlignment: 'top',
+     *         color: 'yellow',
+     *         fontSize: 24,
+     *     })
+     * }
+     *
+     * update() {
+     *     this._scoreLabel.setText('Score: ' + this._score)
+     * }
+     */
+    createLabel(
+        name: string,
+        text: string,
+        options?: GuiLabelOptions
+    ): GuiLabelHandle {
+        const label = new TextBlock(name, text)
+
+        label.width = toPx(options?.width, '200px')
+        label.height = toPx(options?.height, '40px')
+        label.left = toPx(options?.left, '0px')
+        label.top = toPx(options?.top, '0px')
+        label.color = options?.color ?? 'white'
+        label.fontSize = options?.fontSize ?? 16
+        label.textWrapping = options?.wordWrap ?? true
+        label.horizontalAlignment =
+            H_ALIGN_MAP[options?.horizontalAlignment ?? 'center']
+        label.verticalAlignment =
+            V_ALIGN_MAP[options?.verticalAlignment ?? 'center']
+
+        switch (options?.textAlignment) {
+            case 'left':
+                label.textHorizontalAlignment =
+                    Control.HORIZONTAL_ALIGNMENT_LEFT
+                break
+            case 'right':
+                label.textHorizontalAlignment =
+                    Control.HORIZONTAL_ALIGNMENT_RIGHT
+                break
+            default:
+                label.textHorizontalAlignment =
+                    Control.HORIZONTAL_ALIGNMENT_CENTER
+                break
+        }
+
+        this._texture.addControl(label)
+        this._controls.push(label)
+
+        return new GuiLabelHandle(label, this)
+    }
+
+    /** @internal Remove a single control from the texture. */
+    _removeControl(control: Control): void {
+        this._texture.removeControl(control)
+        control.dispose()
+        const idx = this._controls.indexOf(control)
+        if (idx !== -1) this._controls.splice(idx, 1)
+    }
+
+    /** Dispose the entire GUI overlay. Called by RuntimeWorld on stop. */
+    dispose(): void {
+        this._texture.dispose()
+        this._controls = []
+    }
+}

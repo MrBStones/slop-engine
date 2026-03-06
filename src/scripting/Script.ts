@@ -86,6 +86,11 @@ export class Script<N extends Node = TransformNode> {
     /** @internal Set by ScriptRuntime before start(). */
     _world!: RuntimeWorld
 
+    /** GUI overlay — create buttons and labels that communicate with your script. */
+    get gui(): RuntimeWorld['gui'] {
+        return this._world.gui
+    }
+
     /** @internal Collision callbacks registered by this script. */
     _collisionStartCallbacks: CollisionCallback[] = []
     _collisionEndCallbacks: CollisionCallback[] = []
@@ -158,12 +163,14 @@ export class Script<N extends Node = TransformNode> {
     spawnPrefab(path: string, onSpawn: (node: Node) => void): void
     spawnPrefab(
         path: string,
-        options: {
-            name?: string
-            position?: { x: number; y: number; z: number }
-            rotation?: { x: number; y: number; z: number }
-            scale?: { x: number; y: number; z: number }
-        } | undefined,
+        options:
+            | {
+                  name?: string
+                  position?: { x: number; y: number; z: number }
+                  rotation?: { x: number; y: number; z: number }
+                  scale?: { x: number; y: number; z: number }
+              }
+            | undefined,
         onSpawn: (node: Node) => void
     ): void
     spawnPrefab(
@@ -348,4 +355,3 @@ export class MeshScript extends Script<Mesh> {
 export class LightScript extends Script<Light> {
     static override nodeType: ScriptNodeType = 'Light'
 }
-

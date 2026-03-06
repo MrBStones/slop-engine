@@ -1,4 +1,5 @@
 import type { UIMessage } from 'ai'
+import type { SubagentState } from './components/panels/ai/subagentStore'
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -6,6 +7,7 @@ export interface ChatSession {
     id: string
     title: string
     messages: UIMessage[]
+    subagentStates?: Record<string, SubagentState>
     createdAt: number
     updatedAt: number
 }

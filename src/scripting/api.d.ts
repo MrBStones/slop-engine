@@ -87,6 +87,24 @@ declare class Script {
     /** Log a message to the console panel. */
     log(...args: any[]): void
 
+    /**
+     * Fullscreen GUI overlay.
+     * Create buttons and labels that communicate back to this script.
+     *
+     * All controls are auto-removed when play mode stops.
+     *
+     * @example
+     * start() {
+     *     this._label = this.gui.createLabel('info', 'Hello!', {
+     *         top: '20px', verticalAlignment: 'top',
+     *     })
+     *     this.gui.createButton('action', 'Do It', {
+     *         top: '-20px', verticalAlignment: 'bottom',
+     *     }).onClick(() => this.log('clicked!'))
+     * }
+     */
+    readonly gui: GUI
+
     // -- Instance Creation ----------------------------------------------------
 
     /**
@@ -132,23 +150,23 @@ declare class Script {
     /**
      * Spawn a prefab file from the asset store at runtime.
      * Prefab nodes are automatically destroyed when play stops.
-        *
-        * You can use either:
-        * - Promise style: `await this.spawnPrefab(path, options)`
-        * - Callback style: `this.spawnPrefab(path, options, (node) => { ... })`
+     *
+     * You can use either:
+     * - Promise style: `await this.spawnPrefab(path, options)`
+     * - Callback style: `this.spawnPrefab(path, options, (node) => { ... })`
      *
      * @param path     Asset path to a `.prefab.json` file (for example `prefabs/crate.prefab.json`).
      * @param options  Optional name and transform override for the prefab root.
-        * @returns A Promise resolving to the prefab root node (Promise overload).
+     * @returns A Promise resolving to the prefab root node (Promise overload).
      *
      * @example
-    * this.spawnPrefab(
-    *     'prefabs/enemy.prefab.json',
-    *     { position: this.node.position.clone() },
-    *     (enemy) => {
-    *         enemy.name = 'Enemy_' + Math.floor(this.time)
-    *     }
-    * )
+     * this.spawnPrefab(
+     *     'prefabs/enemy.prefab.json',
+     *     { position: this.node.position.clone() },
+     *     (enemy) => {
+     *         enemy.name = 'Enemy_' + Math.floor(this.time)
+     *     }
+     * )
      */
     spawnPrefab(
         path: string,
@@ -166,12 +184,14 @@ declare class Script {
     /** Callback overload for spawning a prefab without `await` with options. */
     spawnPrefab(
         path: string,
-        options: {
-            name?: string
-            position?: Vector3
-            rotation?: Vector3
-            scale?: Vector3
-        } | undefined,
+        options:
+            | {
+                  name?: string
+                  position?: Vector3
+                  rotation?: Vector3
+                  scale?: Vector3
+              }
+            | undefined,
         onSpawn: (node: SceneNode) => void
     ): void
 
@@ -966,6 +986,185 @@ interface SpawnOptions {
         /** Bounciness. Default: 0.75. */
         restitution?: number
     }
+}
+
+// ---------------------------------------------------------------------------
+// GUI
+// ---------------------------------------------------------------------------
+
+/** Options shared by all GUI controls. */
+interface GuiControlOptions {
+    /**
+     * Horizontal position. Use a CSS-style string (`"20px"`, `"50%"`) or a
+     * pixel number. Default: `"0px"`.
+     */
+    left?: string | number
+    /**
+     * Vertical position. Use a CSS-style string (`"20px"`, `"50%"`) or a
+     * pixel number. Default: `"0px"`.
+     */
+    top?: string | number
+    /** Width. Default: `"200px"`. */
+    width?: string | number
+    /** Height. Default: `"40px"`. */
+    height?: string | number
+    /**
+     * Horizontal anchor of the control itself on the screen.
+     * - `"left"` — origin is the left edge of the screen.
+     * - `"center"` — origin is the horizontal centre (default).
+     * - `"right"` — origin is the right edge of the screen.
+     */
+    horizontalAlignment?: 'left' | 'center' | 'right'
+    /**
+     * Vertical anchor of the control itself on the screen.
+     * - `"top"` — origin is the top edge of the screen.
+     * - `"center"` — origin is the vertical centre (default).
+     * - `"bottom"` — origin is the bottom edge of the screen.
+     */
+    verticalAlignment?: 'top' | 'center' | 'bottom'
+}
+
+/** Options for {@link GUI.createButton}. */
+interface GuiButtonOptions extends GuiControlOptions {
+    /** Button background color (CSS string). Default: `"#2a6496"`. */
+    color?: string
+    /** Label text color. Default: `"white"`. */
+    textColor?: string
+    /** Font size in pixels. Default: `16`. */
+    fontSize?: number
+    /** Corner radius in pixels. Default: `4`. */
+    cornerRadius?: number
+}
+
+/** Options for {@link GUI.createLabel}. */
+interface GuiLabelOptions extends GuiControlOptions {
+    /** Text color (CSS string). Default: `"white"`. */
+    color?: string
+    /** Font size in pixels. Default: `16`. */
+    fontSize?: number
+    /** Alignment of text within the label box. Default: `"center"`. */
+    textAlignment?: 'left' | 'center' | 'right'
+    /** Wrap long text to multiple lines. Default: `true`. */
+    wordWrap?: boolean
+}
+
+/**
+ * Handle for a GUI button returned by {@link GUI.createButton}.
+ * Use it to respond to clicks and update the button at runtime.
+ */
+declare class GuiButtonHandle {
+    /** Register a callback fired when the button is clicked. Returns `this`. */
+    onClick(callback: () => void): this
+    /** Change the button's label text. Returns `this`. */
+    setText(text: string): this
+    /** Show or hide the button. Returns `this`. */
+    setVisible(visible: boolean): this
+    /** Change the background color (CSS string). Returns `this`. */
+    setColor(color: string): this
+    /** Remove this button from the screen. */
+    remove(): void
+}
+
+/**
+ * Handle for a text label returned by {@link GUI.createLabel}.
+ * Update the display text each frame or in response to game events.
+ */
+declare class GuiLabelHandle {
+    /** Change the displayed text. Returns `this`. */
+    setText(text: string): this
+    /** Show or hide the label. Returns `this`. */
+    setVisible(visible: boolean): this
+    /** Change the text color (CSS string). Returns `this`. */
+    setColor(color: string): this
+    /** Remove this label from the screen. */
+    remove(): void
+}
+
+/**
+ * Fullscreen GUI overlay. Accessed via `this.gui` inside any script.
+ *
+ * All controls are automatically removed when play mode stops — you don't
+ * need to clean them up manually (though you can call `.remove()` at any time).
+ *
+ * @example
+ * // Heads-up score display
+ * export default class extends Script {
+ *     private _score = 0
+ *     private _label!: GuiLabelHandle
+ *
+ *     start() {
+ *         this._label = this.gui.createLabel('score', 'Score: 0', {
+ *             top: '20px',
+ *             verticalAlignment: 'top',
+ *             color: 'yellow',
+ *             fontSize: 24,
+ *         })
+ *
+ *         this.gui.createButton('reset', 'Reset', {
+ *             top: '-20px',
+ *             verticalAlignment: 'bottom',
+ *         }).onClick(() => {
+ *             this._score = 0
+ *             this._label.setText('Score: 0')
+ *         })
+ *     }
+ *
+ *     update() {
+ *         this._score += this.deltaTime
+ *         this._label.setText('Score: ' + Math.floor(this._score))
+ *     }
+ * }
+ */
+declare class GUI {
+    /**
+     * Create a clickable button.
+     *
+     * @param name     Internal name for the control (must be unique).
+     * @param text     Text displayed on the button.
+     * @param options  Position, size, colors, etc.
+     * @returns A {@link GuiButtonHandle} for handling clicks and updates.
+     *
+     * @example
+     * const btn = this.gui.createButton('fire', 'Fire!', {
+     *     left: '20px',
+     *     top: '-20px',
+     *     horizontalAlignment: 'left',
+     *     verticalAlignment: 'bottom',
+     *     color: '#c0392b',
+     * })
+     * btn.onClick(() => this.log('Fired!'))
+     */
+    createButton(
+        name: string,
+        text: string,
+        options?: GuiButtonOptions
+    ): GuiButtonHandle
+
+    /**
+     * Create a text label.
+     *
+     * @param name     Internal name for the control (must be unique).
+     * @param text     Initial text to display.
+     * @param options  Position, size, color, font size, etc.
+     * @returns A {@link GuiLabelHandle} for updating the text.
+     *
+     * @example
+     * const hp = this.gui.createLabel('hp', 'HP: 100', {
+     *     left: '20px',
+     *     top: '20px',
+     *     horizontalAlignment: 'left',
+     *     verticalAlignment: 'top',
+     *     fontSize: 20,
+     *     color: '#2ecc71',
+     * })
+     * // Later:
+     * hp.setText('HP: ' + this._health)
+     */
+    createLabel(
+        name: string,
+        text: string,
+        options?: GuiLabelOptions
+    ): GuiLabelHandle
 }
 
 // ---------------------------------------------------------------------------

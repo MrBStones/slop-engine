@@ -182,9 +182,7 @@ export function parseScriptNodeType(
     source: string
 ): ScriptNodeType | undefined {
     // Check for convenience subclass usage
-    const extendsMatch = source.match(
-        /extends\s+(MeshScript|LightScript)\b/
-    )
+    const extendsMatch = source.match(/extends\s+(MeshScript|LightScript)\b/)
     if (extendsMatch) {
         switch (extendsMatch[1]) {
             case 'MeshScript':
@@ -195,9 +193,7 @@ export function parseScriptNodeType(
     }
 
     // Check for static nodeType = '...'
-    const staticMatch = source.match(
-        /static\s+nodeType\s*=\s*['"](\w+)['"]/
-    )
+    const staticMatch = source.match(/static\s+nodeType\s*=\s*['"](\w+)['"]/)
     if (staticMatch) {
         return staticMatch[1] as ScriptNodeType
     }
@@ -262,7 +258,9 @@ export class ScriptRuntime {
                         pushLog(
                             'error',
                             `Script "${path}" requires a ${requiredType} node, ` +
-                                `but "${node.name}" is a ${getNodeTypeName(node)}. Skipping.`
+                                `but "${node.name}" is a ${getNodeTypeName(
+                                    node
+                                )}. Skipping.`
                         )
                         continue
                     }

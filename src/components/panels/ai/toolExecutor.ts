@@ -392,7 +392,7 @@ export function createToolExecutor(
             )
         )
         if (operations.length === 0) {
-            return 'Bulk: no valid operations. Ensure each operation has an "action" (add_mesh, add_light, update_node, delete_node, create_group, set_parent) and required params (add_mesh needs type; update_node/set_parent need name/node). Unsupported: checkCollisions, capsule (use cylinder).'
+            return 'Bulk: no valid operations. Ensure each operation has an "action" (add_mesh, add_light, update_node, delete_node, create_group, set_parent) and required params (add_mesh needs type; update_node/delete_node/create_group need name; set_parent needs node). Unsupported: checkCollisions, capsule (use cylinder).'
         }
         const results = executeBulkOperations(s, operations)
         ctx.setNodeTick((t) => t + 1)

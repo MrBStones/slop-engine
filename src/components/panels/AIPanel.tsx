@@ -21,7 +21,16 @@ import {
     generateChatId,
     titleFromMessages,
 } from '../../chatHistoryStore'
-import { isToolPart, getToolNameFromPart, type ToolUIPart } from './ai/types'
+import {
+    isToolPart,
+    getToolNameFromPart,
+    type ToolUIPart,
+} from './ai/types'
+import {
+    getSubagent,
+    restoreSubagentStates,
+    type SubagentState,
+} from './ai/subagentStore'
 import { ChatMessage } from './ai/ChatMessage'
 import { HistoryItem } from './ai/HistoryItem'
 import { createToolExecutor } from './ai/toolExecutor'
@@ -156,10 +165,24 @@ export default function AIPanel(
             () => sessions().find((s) => s.id === id)?.createdAt ?? Date.now()
         )
 
+        const subagentStates: Record<string, SubagentState> = {}
+        for (const msg of messages) {
+            if (msg.role !== 'assistant') continue
+            for (const part of msg.parts ?? []) {
+                if (!isToolPart(part)) continue
+                const toolPart = part as unknown as ToolUIPart
+                const state = getSubagent(toolPart.toolCallId)
+                if (state) subagentStates[toolPart.toolCallId] = state
+            }
+        }
+
         await saveSession({
             id,
             title: titleFromMessages(messages),
             messages: JSON.parse(JSON.stringify(messages)),
+            subagentStates: Object.keys(subagentStates).length
+                ? subagentStates
+                : undefined,
             createdAt,
             updatedAt: Date.now(),
         })
@@ -202,6 +225,7 @@ export default function AIPanel(
             const session = allSessions.find((s) => s.id === id)
             if (session) {
                 chat.setMessages(session.messages)
+                restoreSubagentStates(session.subagentStates ?? {})
             }
         }
 
@@ -283,6 +307,7 @@ export default function AIPanel(
         const newId = generateChatId()
         setActiveChatId(newId)
         chat.setMessages([])
+        restoreSubagentStates({})
         roundTripCount = 0
         recentAutoSendKeys.length = 0
         consecutiveErrorCounts.clear()
@@ -304,6 +329,7 @@ export default function AIPanel(
         if (session) {
             setActiveChatId(sessionId)
             chat.setMessages(session.messages)
+            restoreSubagentStates(session.subagentStates ?? {})
         }
         setShowHistory(false)
         inputRef?.focus()

@@ -36,3 +36,13 @@ export function getSubagent(
     tick()
     return store.get(toolCallId)
 }
+
+export function restoreSubagentStates(
+    states: Record<string, SubagentState>
+): void {
+    store.clear()
+    for (const [id, state] of Object.entries(states)) {
+        store.set(id, JSON.parse(JSON.stringify(state)))
+    }
+    setTick((t) => t + 1)
+}
