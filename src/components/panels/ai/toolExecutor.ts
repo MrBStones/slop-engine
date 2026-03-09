@@ -550,6 +550,58 @@ export function createToolExecutor(
         return JSON.stringify(models)
     }
 
+    const executeGenerateImage = async (args: {
+        prompt: string
+        path: string
+        imageSize?: string
+    }): Promise<string> => {
+        const res = await fetch('/api/generate-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                prompt: args.prompt,
+                path: args.path,
+                imageSize: args.imageSize,
+            }),
+        })
+        if (!res.ok) {
+            const err = (await res.json().catch(() => ({}))) as { error?: string }
+            throw new Error(err.error ?? `Generate image failed (${res.status})`)
+        }
+        const { path, base64, contentType } = (await res.json()) as {
+            path: string
+            base64: string
+            contentType: string
+        }
+        const arr = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+        const blob = new Blob([arr], { type: contentType })
+
+        const store = getAssetStore()
+        let pathStr = path.trim()
+        if (pathStr.startsWith('/')) pathStr = pathStr.slice(1)
+        const segments = pathStr.split('/').filter(Boolean)
+        if (segments.length === 0) {
+            throw new Error('Invalid path for generated image')
+        }
+        const fileName = segments.at(-1)!
+        let parentPath = ''
+        for (let i = 0; i < segments.length - 1; i++) {
+            const dirName = segments[i]
+            const dirPath = parentPath ? `${parentPath}/${dirName}` : dirName
+            if (!store.findNode(store.tree(), dirPath)) {
+                store.addNode(parentPath, dirName, 'folder')
+            }
+            parentPath = dirPath
+        }
+        if (!store.findNode(store.tree(), pathStr)) {
+            store.addNode(parentPath, fileName, 'file')
+        }
+
+        await setBlob(pathStr, blob)
+        ctx.setNodeTick((t) => t + 1)
+        return `Generated and saved image to "${pathStr}"`
+    }
+
     const resolveAsset: AssetResolver = (path) => getBlob(path)
 
     const executeImportAsset = async (args: {
@@ -695,7 +747,7 @@ export function createToolExecutor(
 
     const executeSpawnAgent = async (
         args: {
-            agentType: 'scene' | 'script' | 'ui'
+            agentType: 'scene' | 'script' | 'ui' | 'asset'
             task: string
             context?: string
         },
@@ -881,6 +933,14 @@ export function createToolExecutor(
                 return executeDeleteScript(input as { path: string })
             case 'list_assets':
                 return executeListAssets()
+            case 'generate_image':
+                return executeGenerateImage(
+                    input as {
+                        prompt: string
+                        path: string
+                        imageSize?: string
+                    }
+                )
             case 'import_asset':
                 return executeImportAsset(
                     input as {
@@ -908,7 +968,7 @@ export function createToolExecutor(
             case 'spawn_agent':
                 return executeSpawnAgent(
                     input as {
-                        agentType: 'scene' | 'script' | 'ui'
+                        agentType: 'scene' | 'script' | 'ui' | 'asset'
                         task: string
                         context?: string
                     },

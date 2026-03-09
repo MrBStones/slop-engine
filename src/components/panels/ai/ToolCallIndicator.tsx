@@ -144,6 +144,10 @@ function toolLabel(
             if (error) return 'Failed to read console'
             if (done) return 'Read console logs'
             return 'Reading console...'
+        case 'generate_image':
+            if (error) return 'Image generation failed'
+            if (done) return 'Generated image'
+            return 'Generating image...'
         case 'spawn_agent': {
             const agentType = inp?.agentType as string | undefined
             const task = inp?.task as string | undefined
@@ -154,7 +158,9 @@ function toolLabel(
                       ? 'Scene Builder'
                       : agentType === 'ui'
                         ? 'UI Builder'
-                        : 'Agent'
+                        : agentType === 'asset'
+                          ? 'Asset Generator'
+                          : 'Agent'
             const short = task
                 ? task.length > 50
                     ? task.slice(0, 47) + '...'

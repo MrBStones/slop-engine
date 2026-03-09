@@ -570,11 +570,53 @@ export const lookupScriptingApiTool = {
     }),
 }
 
+export const generateImageTool = {
+    description:
+        'Generate an image from a text prompt using AI and save it to the asset store. Use for textures, sprites, concept art, or any image asset. Path should be under images/ (e.g. images/hero.png).',
+    inputSchema: jsonSchema<{
+        prompt: string
+        path: string
+        imageSize?: string
+    }>({
+        type: 'object',
+        properties: {
+            prompt: {
+                type: 'string',
+                description:
+                    'Text description of the image to generate (e.g. "a red brick wall texture, seamless").',
+            },
+            path: {
+                type: 'string',
+                description:
+                    'Asset path to save the image (e.g. "images/hero.png"). Use .png or .jpg extension.',
+            },
+            imageSize: {
+                type: 'string',
+                enum: [
+                    '1:1',
+                    '9:16',
+                    '16:9',
+                    '3:4',
+                    '4:3',
+                    '3:2',
+                    '2:3',
+                    '5:4',
+                    '4:5',
+                    '21:9',
+                ],
+                description:
+                    'Aspect ratio. Default 1:1. Use 16:9 for landscapes, 9:16 for portraits.',
+            },
+        },
+        required: ['prompt', 'path'],
+    }),
+}
+
 export const spawnAgentTool = {
     description:
-        'Spawn a specialist subagent. Use agentType "scene" for 3D world building (meshes, lights, layout, assets), "script" for TypeScript gameplay scripting (writing/editing scripts, attaching them, debugging via simulation), and "ui" for in-game UI (buttons, labels, HUDs via this.gui). Provide a clear self-contained task and any relevant context.',
+        'Spawn a specialist subagent. Use agentType "scene" for 3D world building (meshes, lights, layout, assets), "script" for TypeScript gameplay scripting (writing/editing scripts, attaching them, debugging via simulation), "ui" for in-game UI (buttons, labels, HUDs via this.gui), and "asset" for generating image assets (textures, sprites, concept art). Provide a clear self-contained task and any relevant context.',
     inputSchema: jsonSchema<{
-        agentType: 'scene' | 'script' | 'ui'
+        agentType: 'scene' | 'script' | 'ui' | 'asset'
         task: string
         context?: string
     }>({
@@ -582,9 +624,9 @@ export const spawnAgentTool = {
         properties: {
             agentType: {
                 type: 'string',
-                enum: ['scene', 'script', 'ui'],
+                enum: ['scene', 'script', 'ui', 'asset'],
                 description:
-                    '"scene" for 3D world construction (meshes, lights, hierarchy, assets). "script" for TypeScript gameplay scripting, logic, and debugging. "ui" for in-game UI (buttons, labels, HUDs via scripts).',
+                    '"scene" for 3D world construction (meshes, lights, hierarchy, assets). "script" for TypeScript gameplay scripting, logic, and debugging. "ui" for in-game UI (buttons, labels, HUDs via scripts). "asset" for generating image assets (textures, sprites, concept art).',
             },
             task: {
                 type: 'string',

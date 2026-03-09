@@ -11,6 +11,7 @@ import {
     buildSceneAgentSystemPrompt,
     buildScriptAgentSystemPrompt,
     buildUIAgentSystemPrompt,
+    buildAssetAgentSystemPrompt,
     buildCoordinatorSystemPrompt,
 } from './prompts'
 import {
@@ -20,6 +21,7 @@ import {
     sleepTool,
     getConsoleLogsTool,
     spawnAgentTool,
+    generateImageTool,
     createScriptTool,
     listScriptsTool,
     readScriptTool,
@@ -41,6 +43,7 @@ import {
 } from './tools'
 import { typeCheckScript } from './script-typecheck'
 import { createLookupHandler } from './api-lookup'
+import { generateImage, pollTaskResult } from './nanobanana'
 
 // Minimal CoreMessage-compatible type for the subagent endpoint
 type SubagentMessage = {
@@ -211,6 +214,113 @@ export function chatApiPlugin(): Plugin {
                 }
             })
 
+            server.middlewares.use('/api/generate-image', async (req, res) => {
+                if (req.method !== 'POST') {
+                    res.statusCode = 405
+                    res.end('Method Not Allowed')
+                    return
+                }
+                const apiKey = env.NANOBANANA_API_KEY
+                if (!apiKey) {
+                    res.statusCode = 500
+                    res.setHeader('Content-Type', 'application/json')
+                    res.end(
+                        JSON.stringify({
+                            error: 'NANOBANANA_API_KEY not configured',
+                        })
+                    )
+                    return
+                }
+                try {
+                    const body = await new Promise<string>((resolve) => {
+                        let data = ''
+                        req.on('data', (chunk: Buffer) => {
+                            data += chunk.toString()
+                        })
+                        req.on('end', () => resolve(data))
+                    })
+                    const { prompt, path, imageSize } = JSON.parse(body) as {
+                        prompt: string
+                        path: string
+                        imageSize?: string
+                    }
+                    if (!prompt || !path) {
+                        res.statusCode = 400
+                        res.setHeader('Content-Type', 'application/json')
+                        res.end(
+                            JSON.stringify({
+                                error: 'prompt and path are required',
+                            })
+                        )
+                        return
+                    }
+                    const { taskId } = await generateImage({
+                        apiKey,
+                        prompt,
+                        imageSize: imageSize as
+                            | '1:1'
+                            | '9:16'
+                            | '16:9'
+                            | '3:4'
+                            | '4:3'
+                            | '3:2'
+                            | '2:3'
+                            | '5:4'
+                            | '4:5'
+                            | '21:9'
+                            | undefined,
+                    })
+                    const result = await pollTaskResult({ apiKey, taskId })
+                    if (!result) {
+                        res.statusCode = 500
+                        res.setHeader('Content-Type', 'application/json')
+                        res.end(
+                            JSON.stringify({
+                                error: 'Image generation failed or timed out',
+                            })
+                        )
+                        return
+                    }
+                    const imgRes = await fetch(result.resultImageUrl)
+                    if (!imgRes.ok) {
+                        res.statusCode = 500
+                        res.setHeader('Content-Type', 'application/json')
+                        res.end(
+                            JSON.stringify({
+                                error: 'Failed to download generated image',
+                            })
+                        )
+                        return
+                    }
+                    const buf = await imgRes.arrayBuffer()
+                    const base64 = Buffer.from(buf).toString('base64')
+                    const contentType =
+                        imgRes.headers.get('content-type') ?? 'image/png'
+                    res.setHeader('Content-Type', 'application/json')
+                    res.end(
+                        JSON.stringify({
+                            path,
+                            base64,
+                            contentType,
+                        })
+                    )
+                } catch (error) {
+                    console.error('[generate-image]', error)
+                    if (!res.headersSent) {
+                        res.statusCode = 500
+                        res.setHeader('Content-Type', 'application/json')
+                        res.end(
+                            JSON.stringify({
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : 'Image generation failed',
+                            })
+                        )
+                    }
+                }
+            })
+
             server.middlewares.use('/api/subagent', async (req, res) => {
                 if (req.method !== 'POST') {
                     res.statusCode = 405
@@ -229,19 +339,28 @@ export function chatApiPlugin(): Plugin {
 
                     const { messages, agentType } = JSON.parse(body) as {
                         messages: SubagentMessage[]
-                        agentType: 'scene' | 'script' | 'ui'
+                        agentType: 'scene' | 'script' | 'ui' | 'asset'
                     }
 
-                    const isScriptingAgent = agentType === 'script' || agentType === 'ui'
+                    const isScriptingAgent =
+                        agentType === 'script' || agentType === 'ui'
 
                     const system =
                         agentType === 'script'
                             ? buildScriptAgentSystemPrompt(server.config.root)
                             : agentType === 'ui'
                               ? buildUIAgentSystemPrompt(server.config.root)
-                              : buildSceneAgentSystemPrompt()
+                              : agentType === 'asset'
+                                ? buildAssetAgentSystemPrompt()
+                                : buildSceneAgentSystemPrompt()
 
-                    const tools = isScriptingAgent
+                    const tools =
+                        agentType === 'asset'
+                            ? {
+                                  generate_image: generateImageTool,
+                                  list_assets: listAssetsTool,
+                              }
+                            : isScriptingAgent
                         ? {
                               get_scene: getSceneTool,
                               lookup_scripting_api: lookupScriptingApiTool,
