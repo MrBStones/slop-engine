@@ -18,6 +18,8 @@ import {
     For,
     createSignal,
     createEffect,
+    onCleanup,
+    JSXElement,
 } from 'solid-js'
 import {
     Checkbox,
@@ -42,6 +44,70 @@ const sectionHeaderClass = 'border-b border-gray-700/40 pb-1 -mx-1 px-1'
 const sectionContentClass = 'pl-2 pt-0.5 pb-2 border-l border-gray-700/50 ml-1'
 const propertyGroupClass =
     'rounded bg-gray-900/50 border border-gray-700/30 px-2 py-1.5'
+
+interface PropertyGroupProps {
+    title: string
+    children: JSXElement
+}
+
+interface NumberFieldProps {
+    label: string
+    value: () => number | undefined
+    onChange: (value: number) => void
+    min?: string
+    max?: string
+    step?: string
+}
+
+interface BooleanFieldProps {
+    label: string
+    checked: () => boolean | undefined
+    onChange: (checked: boolean) => void
+}
+
+function PropertyGroup(props: Readonly<PropertyGroupProps>) {
+    return (
+        <div class={propertyGroupClass}>
+            <div class="text-xs font-medium text-gray-400 mb-1">
+                {props.title}
+            </div>
+            {props.children}
+        </div>
+    )
+}
+
+function NumberField(props: Readonly<NumberFieldProps>) {
+    return (
+        <Input
+            label={props.label}
+            type="number"
+            min={props.min}
+            max={props.max}
+            step={props.step}
+            value={fmt(props.value())}
+            onInput={(e) => {
+                const value = Number.parseFloat(e.currentTarget.value)
+                if (Number.isNaN(value)) return
+                props.onChange(value)
+            }}
+        />
+    )
+}
+
+function BooleanField(props: Readonly<BooleanFieldProps>) {
+    return (
+        <Checkbox
+            label={props.label}
+            checked={props.checked()}
+            onChange={(e) => props.onChange(e.currentTarget.checked)}
+        />
+    )
+}
+
+function ensureNodeMetadata(node: Node): Record<string, unknown> {
+    if (!node.metadata) node.metadata = {}
+    return node.metadata as Record<string, unknown>
+}
 
 interface TextureTransformValues {
     textureTiling: [number, number]
@@ -135,6 +201,13 @@ function TransformProperties(
         scheduleAutoSave: () => void
     }>
 ) {
+    const updateNode = (updater: (node: TransformNode) => void) => {
+        const node = props.node()
+        if (!node) return
+        updater(node)
+        props.scheduleAutoSave()
+    }
+
     return (
         <Collapsible
             title="Transform"
@@ -142,51 +215,36 @@ function TransformProperties(
             contentClass={sectionContentClass}
         >
             <div class="flex flex-col gap-2">
-                <div class={propertyGroupClass}>
-                    <div class="text-xs font-medium text-gray-400 mb-1">
-                        Position
-                    </div>
+                <PropertyGroup title="Position">
                     <Vector3Input
                         value={() => props.node()?.position}
                         onChange={(axis, value) => {
-                            const n = props.node()
-                            if (n) {
-                                n.position[axis] = value
-                                props.scheduleAutoSave()
-                            }
+                            updateNode((node) => {
+                                node.position[axis] = value
+                            })
                         }}
                     />
-                </div>
-                <div class={propertyGroupClass}>
-                    <div class="text-xs font-medium text-gray-400 mb-1">
-                        Rotation
-                    </div>
+                </PropertyGroup>
+                <PropertyGroup title="Rotation">
                     <Vector3Input
                         value={() => props.node()?.rotation}
                         onChange={(axis, value) => {
-                            const n = props.node()
-                            if (n) {
-                                n.rotation[axis] = value
-                                props.scheduleAutoSave()
-                            }
+                            updateNode((node) => {
+                                node.rotation[axis] = value
+                            })
                         }}
                     />
-                </div>
-                <div class={propertyGroupClass}>
-                    <div class="text-xs font-medium text-gray-400 mb-1">
-                        Scale
-                    </div>
+                </PropertyGroup>
+                <PropertyGroup title="Scale">
                     <Vector3Input
                         value={() => props.node()?.scaling}
                         onChange={(axis, value) => {
-                            const n = props.node()
-                            if (n) {
-                                n.scaling[axis] = value
-                                props.scheduleAutoSave()
-                            }
+                            updateNode((node) => {
+                                node.scaling[axis] = value
+                            })
                         }}
                     />
-                </div>
+                </PropertyGroup>
             </div>
         </Collapsible>
     )
@@ -201,6 +259,13 @@ function MaterialProperties(
 ) {
     const material = () =>
         props.node()?.material as StandardMaterial | undefined
+
+    const updateMaterial = (updater: (material: StandardMaterial) => void) => {
+        const current = material()
+        if (!current) return
+        updater(current)
+        props.scheduleAutoSave()
+    }
 
     const textureMetadata = () =>
         props.node()?.metadata as Record<string, unknown> | undefined
@@ -227,8 +292,7 @@ function MaterialProperties(
         const mesh = props.node()
         if (!mesh) return
 
-        if (!mesh.metadata) mesh.metadata = {}
-        const metadata = mesh.metadata as Record<string, unknown>
+        const metadata = ensureNodeMetadata(mesh)
         const next = currentTextureTransform()
         updater(next)
 
@@ -270,8 +334,7 @@ function MaterialProperties(
         const url = URL.createObjectURL(blob)
         textureBlobUrl = url
         m.diffuseTexture = new Texture(url, scene)
-        if (!mesh.metadata) mesh.metadata = {}
-        const meta = mesh.metadata as Record<string, unknown>
+        const meta = ensureNodeMetadata(mesh)
         if (m.diffuseTexture instanceof Texture) {
             applyTextureTransform(m.diffuseTexture, nextTransform)
         }
@@ -304,10 +367,7 @@ function MaterialProperties(
                             void applyTexture(e.currentTarget.value)
                         }
                     />
-                    <div class={propertyGroupClass}>
-                        <div class="text-xs font-medium text-gray-400 mb-1">
-                            Texture Tiling
-                        </div>
+                    <PropertyGroup title="Texture Tiling">
                         <div class="grid grid-cols-2 gap-2">
                             <Input
                                 label="U"
@@ -350,11 +410,8 @@ function MaterialProperties(
                                 }}
                             />
                         </div>
-                    </div>
-                    <div class={propertyGroupClass}>
-                        <div class="text-xs font-medium text-gray-400 mb-1">
-                            Texture Offset
-                        </div>
+                    </PropertyGroup>
+                    <PropertyGroup title="Texture Offset">
                         <div class="grid grid-cols-2 gap-2">
                             <Input
                                 label="U"
@@ -397,17 +454,12 @@ function MaterialProperties(
                                 }}
                             />
                         </div>
-                    </div>
-                    <Input
+                    </PropertyGroup>
+                    <NumberField
                         label="Texture Rotation"
-                        type="number"
                         step="1"
-                        value={fmt(currentTextureTransform().textureRotation)}
-                        onInput={(e) => {
-                            const value = Number.parseFloat(
-                                e.currentTarget.value
-                            )
-                            if (Number.isNaN(value)) return
+                        value={() => currentTextureTransform().textureRotation}
+                        onChange={(value) => {
                             updateTextureTransform((current) => {
                                 current.textureRotation = value
                             })
@@ -416,118 +468,91 @@ function MaterialProperties(
                     <Color3Input
                         label="Diffuse"
                         value={() => material()?.diffuseColor}
-                        onChange={(c) => {
-                            const m = material()
-                            if (m) {
-                                m.diffuseColor = c
-                                props.scheduleAutoSave()
-                            }
-                        }}
+                        onChange={(c) =>
+                            updateMaterial((material) => {
+                                material.diffuseColor = c
+                            })
+                        }
                     />
                     <Color3Input
                         label="Specular"
                         value={() => material()?.specularColor}
-                        onChange={(c) => {
-                            const m = material()
-                            if (m) {
-                                m.specularColor = c
-                                props.scheduleAutoSave()
-                            }
-                        }}
+                        onChange={(c) =>
+                            updateMaterial((material) => {
+                                material.specularColor = c
+                            })
+                        }
                     />
                     <Color3Input
                         label="Emissive"
                         value={() => material()?.emissiveColor}
-                        onChange={(c) => {
-                            const m = material()
-                            if (m) {
-                                m.emissiveColor = c
-                                props.scheduleAutoSave()
-                            }
-                        }}
+                        onChange={(c) =>
+                            updateMaterial((material) => {
+                                material.emissiveColor = c
+                            })
+                        }
                     />
                     <Color3Input
                         label="Ambient"
                         value={() => material()?.ambientColor}
-                        onChange={(c) => {
-                            const m = material()
-                            if (m) {
-                                m.ambientColor = c
-                                props.scheduleAutoSave()
-                            }
-                        }}
+                        onChange={(c) =>
+                            updateMaterial((material) => {
+                                material.ambientColor = c
+                            })
+                        }
                     />
-                    <Input
+                    <NumberField
                         label="Alpha"
-                        type="number"
                         min="0"
                         max="1"
                         step="0.05"
-                        value={fmt(material()?.alpha)}
-                        onInput={(e) => {
-                            const m = material()
-                            if (m) {
-                                m.alpha = Number.parseFloat(
-                                    e.currentTarget.value
-                                )
-                                props.scheduleAutoSave()
-                            }
-                        }}
+                        value={() => material()?.alpha}
+                        onChange={(value) =>
+                            updateMaterial((material) => {
+                                material.alpha = value
+                            })
+                        }
                     />
-                    <Input
+                    <NumberField
                         label="Specular Power"
-                        type="number"
                         min="0"
                         step="1"
-                        value={fmt(material()?.specularPower)}
-                        onInput={(e) => {
-                            const m = material()
-                            if (m) {
-                                m.specularPower = Number.parseFloat(
-                                    e.currentTarget.value
-                                )
-                                props.scheduleAutoSave()
-                            }
-                        }}
+                        value={() => material()?.specularPower}
+                        onChange={(value) =>
+                            updateMaterial((material) => {
+                                material.specularPower = value
+                            })
+                        }
                     />
-                    <Input
+                    <NumberField
                         label="Roughness"
-                        type="number"
                         min="0"
                         max="1"
                         step="0.05"
-                        value={fmt(material()?.roughness)}
-                        onInput={(e) => {
-                            const m = material()
-                            if (m) {
-                                m.roughness = Number.parseFloat(
-                                    e.currentTarget.value
-                                )
-                                props.scheduleAutoSave()
-                            }
-                        }}
+                        value={() => material()?.roughness}
+                        onChange={(value) =>
+                            updateMaterial((material) => {
+                                material.roughness = value
+                            })
+                        }
                     />
-                    <Checkbox
+                    <BooleanField
                         label="Wireframe"
-                        checked={material()?.wireframe}
-                        onChange={(e) => {
-                            const m = material()
-                            if (m) {
-                                m.wireframe = e.currentTarget.checked
-                                props.scheduleAutoSave()
-                            }
-                        }}
+                        checked={() => material()?.wireframe}
+                        onChange={(checked) =>
+                            updateMaterial((material) => {
+                                material.wireframe = checked
+                            })
+                        }
                     />
-                    <Checkbox
+                    <BooleanField
                         label="Backface Culling"
-                        checked={material()?.backFaceCulling}
-                        onChange={(e) => {
-                            const m = material()
-                            if (m) {
-                                m.backFaceCulling = e.currentTarget.checked
-                                props.scheduleAutoSave()
-                            }
-                        }}
+                        checked={() => material()?.backFaceCulling}
+                        onChange={(checked) =>
+                            updateMaterial((material) => {
+                                material.backFaceCulling = checked
+                            })
+                        }
                     />
                 </div>
             </Collapsible>
@@ -543,8 +568,7 @@ function getNodeScripts(node: Node): string[] {
 
 /** Set the scripts array on node.metadata (preserving other metadata). */
 function setNodeScripts(node: Node, scripts: string[]): void {
-    if (!node.metadata) node.metadata = {}
-    const meta = node.metadata as Record<string, unknown>
+    const meta = ensureNodeMetadata(node)
     meta.scripts = scripts.length > 0 ? scripts : undefined
 }
 
@@ -565,26 +589,30 @@ function ScriptProperties(
     // Load and parse nodeType from each script asset whenever the list changes
     createEffect(() => {
         const paths = props.scriptAssets()
-        const typeMap: Record<string, ScriptNodeType | undefined> = {}
-        let pending = paths.length
-        if (pending === 0) {
+        if (paths.length === 0) {
             setScriptTypes({})
             return
         }
-        for (const path of paths) {
-            getBlob(path).then((blob) => {
-                if (blob) {
-                    blob.text().then((src) => {
-                        typeMap[path] = parseScriptNodeType(src)
-                        pending--
-                        if (pending <= 0) setScriptTypes({ ...typeMap })
-                    })
-                } else {
-                    pending--
-                    if (pending <= 0) setScriptTypes({ ...typeMap })
-                }
+
+        let disposed = false
+
+        void Promise.all(
+            paths.map(async (path) => {
+                const blob = await getBlob(path)
+                const source = blob ? await blob.text() : undefined
+                return [
+                    path,
+                    source ? parseScriptNodeType(source) : undefined,
+                ] as const
             })
-        }
+        ).then((entries) => {
+            if (disposed) return
+            setScriptTypes(Object.fromEntries(entries))
+        })
+
+        onCleanup(() => {
+            disposed = true
+        })
     })
 
     /** Check if a script is compatible with the currently selected node. */
@@ -746,6 +774,364 @@ function ScriptProperties(
     )
 }
 
+function PhysicsProperties(
+    props: Readonly<{
+        node: () => Mesh | undefined
+        scheduleAutoSave: () => void
+    }>
+) {
+    const updateMesh = (updater: (mesh: Mesh) => void) => {
+        const mesh = props.node()
+        if (!mesh) return
+        updater(mesh)
+        props.scheduleAutoSave()
+    }
+
+    const metadata = () =>
+        props.node()?.metadata as Record<string, unknown> | undefined
+
+    return (
+        <Collapsible
+            title="Physics"
+            headerClass={sectionHeaderClass}
+            contentClass={sectionContentClass}
+        >
+            <div class="flex flex-col gap-2 pt-0.5">
+                <BooleanField
+                    label="Enabled"
+                    checked={() =>
+                        metadata()?.physicsEnabled as boolean | undefined
+                    }
+                    onChange={(checked) => {
+                        updateMesh((mesh) => {
+                            ensureNodeMetadata(mesh).physicsEnabled = checked
+                        })
+                    }}
+                />
+                <NumberField
+                    label="Mass"
+                    min="0"
+                    step="0.1"
+                    value={() => metadata()?.physicsMass as number | undefined}
+                    onChange={(value) => {
+                        updateMesh((mesh) => {
+                            ensureNodeMetadata(mesh).physicsMass = value
+                        })
+                    }}
+                />
+            </div>
+        </Collapsible>
+    )
+}
+
+function MeshRenderingProperties(
+    props: Readonly<{
+        node: () => Mesh | undefined
+        scheduleAutoSave: () => void
+    }>
+) {
+    const updateMesh = (updater: (mesh: Mesh) => void) => {
+        const mesh = props.node()
+        if (!mesh) return
+        updater(mesh)
+        props.scheduleAutoSave()
+    }
+
+    return (
+        <Collapsible
+            title="Rendering"
+            headerClass={sectionHeaderClass}
+            contentClass={sectionContentClass}
+        >
+            <div class="flex flex-col gap-2 pt-0.5">
+                <NumberField
+                    label="Visibility"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={() => props.node()?.visibility}
+                    onChange={(value) => {
+                        updateMesh((mesh) => {
+                            mesh.visibility = value
+                        })
+                    }}
+                />
+                <BooleanField
+                    label="Visible"
+                    checked={() => props.node()?.isVisible}
+                    onChange={(checked) => {
+                        updateMesh((mesh) => {
+                            mesh.isVisible = checked
+                        })
+                    }}
+                />
+                <BooleanField
+                    label="Pickable"
+                    checked={() => props.node()?.isPickable}
+                    onChange={(checked) => {
+                        updateMesh((mesh) => {
+                            mesh.isPickable = checked
+                        })
+                    }}
+                />
+                <BooleanField
+                    label="Receive Shadows"
+                    checked={() => props.node()?.receiveShadows}
+                    onChange={(checked) => {
+                        updateMesh((mesh) => {
+                            mesh.receiveShadows = checked
+                        })
+                    }}
+                />
+                <BooleanField
+                    label="Check Collisions"
+                    checked={() => props.node()?.checkCollisions}
+                    onChange={(checked) => {
+                        updateMesh((mesh) => {
+                            mesh.checkCollisions = checked
+                        })
+                    }}
+                />
+                <Select
+                    label="Billboard Mode"
+                    options={[
+                        { label: 'None', value: '0' },
+                        { label: 'All', value: '7' },
+                        { label: 'X axis', value: '1' },
+                        { label: 'Y axis', value: '2' },
+                        { label: 'Z axis', value: '4' },
+                    ]}
+                    value={String(props.node()?.billboardMode ?? 0)}
+                    onChange={(e) => {
+                        updateMesh((mesh) => {
+                            mesh.billboardMode = Number.parseInt(
+                                e.currentTarget.value,
+                                10
+                            )
+                        })
+                    }}
+                />
+            </div>
+        </Collapsible>
+    )
+}
+
+function LightProperties(
+    props: Readonly<{
+        node: () => ShadowLight | undefined
+        scheduleAutoSave: () => void
+    }>
+) {
+    const updateLight = (updater: (light: ShadowLight) => void) => {
+        const light = props.node()
+        if (!light) return
+        updater(light)
+        props.scheduleAutoSave()
+    }
+
+    return (
+        <>
+            <Collapsible title="Transform" contentClass={sectionContentClass}>
+                <div class="pt-0.5">
+                    <Vector3Input
+                        value={() => props.node()?.position}
+                        onChange={(axis, value) => {
+                            updateLight((light) => {
+                                light.position[axis] = value
+                            })
+                        }}
+                    />
+                </div>
+            </Collapsible>
+
+            <Collapsible
+                title="Light"
+                headerClass={sectionHeaderClass}
+                contentClass={sectionContentClass}
+            >
+                <div class="flex flex-col gap-2 pt-0.5">
+                    <NumberField
+                        label="Intensity"
+                        min="0"
+                        step="0.1"
+                        value={() => props.node()?.intensity}
+                        onChange={(value) => {
+                            updateLight((light) => {
+                                light.intensity = value
+                            })
+                        }}
+                    />
+                    <Color3Input
+                        label="Diffuse"
+                        value={() => props.node()?.diffuse}
+                        onChange={(color) => {
+                            updateLight((light) => {
+                                light.diffuse = color
+                            })
+                        }}
+                    />
+                    <Color3Input
+                        label="Specular"
+                        value={() => props.node()?.specular}
+                        onChange={(color) => {
+                            updateLight((light) => {
+                                light.specular = color
+                            })
+                        }}
+                    />
+                    <NumberField
+                        label="Range"
+                        min="0"
+                        step="1"
+                        value={() => props.node()?.range}
+                        onChange={(value) => {
+                            updateLight((light) => {
+                                light.range = value
+                            })
+                        }}
+                    />
+                    <NumberField
+                        label="Radius"
+                        min="0"
+                        step="0.1"
+                        value={() => props.node()?.radius}
+                        onChange={(value) => {
+                            updateLight((light) => {
+                                light.radius = value
+                            })
+                        }}
+                    />
+                    <NumberField
+                        label="Shadow Min Z"
+                        step="0.1"
+                        value={() => props.node()?.shadowMinZ}
+                        onChange={(value) => {
+                            updateLight((light) => {
+                                light.shadowMinZ = value
+                            })
+                        }}
+                    />
+                    <NumberField
+                        label="Shadow Max Z"
+                        step="0.1"
+                        value={() => props.node()?.shadowMaxZ}
+                        onChange={(value) => {
+                            updateLight((light) => {
+                                light.shadowMaxZ = value
+                            })
+                        }}
+                    />
+                    <BooleanField
+                        label="Enabled"
+                        checked={() => props.node()?.isEnabled()}
+                        onChange={(checked) => {
+                            updateLight((light) => {
+                                light.setEnabled(checked)
+                            })
+                        }}
+                    />
+                </div>
+            </Collapsible>
+        </>
+    )
+}
+
+function CameraProperties(
+    props: Readonly<{
+        node: () => FreeCamera | undefined
+        scheduleAutoSave: () => void
+    }>
+) {
+    const updateCamera = (updater: (camera: FreeCamera) => void) => {
+        const camera = props.node()
+        if (!camera) return
+        updater(camera)
+        props.scheduleAutoSave()
+    }
+
+    return (
+        <>
+            <Collapsible title="Transform" contentClass={sectionContentClass}>
+                <div class="pt-0.5">
+                    <Vector3Input
+                        value={() => props.node()?.position}
+                        onChange={(axis, value) => {
+                            updateCamera((camera) => {
+                                camera.position[axis] = value
+                            })
+                        }}
+                    />
+                </div>
+            </Collapsible>
+            <Collapsible
+                title="Camera"
+                headerClass={sectionHeaderClass}
+                contentClass={sectionContentClass}
+            >
+                <div class="flex flex-col gap-2 pt-0.5">
+                    <NumberField
+                        label="FOV"
+                        min="0.1"
+                        max="3.14"
+                        step="0.05"
+                        value={() => props.node()?.fov}
+                        onChange={(value) => {
+                            updateCamera((camera) => {
+                                camera.fov = value
+                            })
+                        }}
+                    />
+                    <NumberField
+                        label="Near Clip (minZ)"
+                        min="0.01"
+                        step="0.1"
+                        value={() => props.node()?.minZ}
+                        onChange={(value) => {
+                            updateCamera((camera) => {
+                                camera.minZ = value
+                            })
+                        }}
+                    />
+                    <NumberField
+                        label="Far Clip (maxZ)"
+                        min="1"
+                        step="10"
+                        value={() => props.node()?.maxZ}
+                        onChange={(value) => {
+                            updateCamera((camera) => {
+                                camera.maxZ = value
+                            })
+                        }}
+                    />
+                    <NumberField
+                        label="Speed"
+                        min="0"
+                        step="0.1"
+                        value={() => props.node()?.speed}
+                        onChange={(value) => {
+                            updateCamera((camera) => {
+                                camera.speed = value
+                            })
+                        }}
+                    />
+                    <NumberField
+                        label="Inertia"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={() => props.node()?.inertia}
+                        onChange={(value) => {
+                            updateCamera((camera) => {
+                                camera.inertia = value
+                            })
+                        }}
+                    />
+                </div>
+            </Collapsible>
+        </>
+    )
+}
+
 export default function PropertiesPanel(
     props: Readonly<{
         node: Accessor<Node | undefined>
@@ -757,8 +1143,22 @@ export default function PropertiesPanel(
 ) {
     const meshNode = () => props.node() as Mesh | undefined
     const transformNode = () => props.node() as TransformNode | undefined
-    const lightNode = () => props.node() as ShadowLight | undefined
-    const cameraNode = () => props.node() as FreeCamera | undefined
+    const lightNode = () => {
+        const node = props.node()
+        return node instanceof ShadowLight ? node : undefined
+    }
+    const cameraNode = () => {
+        const node = props.node()
+        return node instanceof FreeCamera ? node : undefined
+    }
+
+    const updateNodeName = (name: string) => {
+        const node = props.node()
+        if (!node) return
+        node.name = name
+        props.setNodeTick((tick) => tick + 1)
+        props.scheduleAutoSave()
+    }
 
     return (
         <>
@@ -770,11 +1170,9 @@ export default function PropertiesPanel(
                             <Input
                                 label="Name"
                                 value={props.node()?.name}
-                                onInput={(e) => {
-                                    props.node()!.name = e.currentTarget.value
-                                    props.setNodeTick((t) => t + 1)
-                                    props.scheduleAutoSave()
-                                }}
+                                onInput={(e) =>
+                                    updateNodeName(e.currentTarget.value)
+                                }
                             />
                             <div>
                                 <span class="text-xs font-medium text-gray-400">
@@ -802,136 +1200,14 @@ export default function PropertiesPanel(
                     />
                 </Show>
                 <Show when={props.node() instanceof Mesh}>
-                    <Collapsible
-                        title="Physics"
-                        headerClass={sectionHeaderClass}
-                        contentClass={sectionContentClass}
-                    >
-                        <div class="flex flex-col gap-2 pt-0.5">
-                            <Checkbox
-                                label="Enabled"
-                                checked={meshNode()?.metadata?.physicsEnabled}
-                                onChange={(e) => {
-                                    const m = meshNode()
-                                    if (m) {
-                                        if (!m.metadata) m.metadata = {}
-                                        m.metadata.physicsEnabled =
-                                            e.currentTarget.checked
-                                        props.scheduleAutoSave()
-                                    }
-                                }}
-                            />
-                            <Input
-                                label="Mass"
-                                type="number"
-                                min="0"
-                                step="0.1"
-                                value={fmt(meshNode()?.metadata?.physicsMass)}
-                                onInput={(e) => {
-                                    const m = meshNode()
-                                    if (m) {
-                                        if (!m.metadata) m.metadata = {}
-                                        m.metadata.physicsMass =
-                                            Number.parseFloat(
-                                                e.currentTarget.value
-                                            )
-                                        props.scheduleAutoSave()
-                                    }
-                                }}
-                            />
-                        </div>
-                    </Collapsible>
-                    <Collapsible
-                        title="Rendering"
-                        headerClass={sectionHeaderClass}
-                        contentClass={sectionContentClass}
-                    >
-                        <div class="flex flex-col gap-2 pt-0.5">
-                            <Input
-                                label="Visibility"
-                                type="number"
-                                min="0"
-                                max="1"
-                                step="0.05"
-                                value={fmt(meshNode()?.visibility)}
-                                onInput={(e) => {
-                                    const m = meshNode()
-                                    if (m) {
-                                        m.visibility = Number.parseFloat(
-                                            e.currentTarget.value
-                                        )
-                                        props.scheduleAutoSave()
-                                    }
-                                }}
-                            />
-                            <Checkbox
-                                label="Visible"
-                                checked={meshNode()?.isVisible}
-                                onChange={(e) => {
-                                    const m = meshNode()
-                                    if (m) {
-                                        m.isVisible = e.currentTarget.checked
-                                        props.scheduleAutoSave()
-                                    }
-                                }}
-                            />
-                            <Checkbox
-                                label="Pickable"
-                                checked={meshNode()?.isPickable}
-                                onChange={(e) => {
-                                    const m = meshNode()
-                                    if (m) {
-                                        m.isPickable = e.currentTarget.checked
-                                        props.scheduleAutoSave()
-                                    }
-                                }}
-                            />
-                            <Checkbox
-                                label="Receive Shadows"
-                                checked={meshNode()?.receiveShadows}
-                                onChange={(e) => {
-                                    const m = meshNode()
-                                    if (m) {
-                                        m.receiveShadows =
-                                            e.currentTarget.checked
-                                        props.scheduleAutoSave()
-                                    }
-                                }}
-                            />
-                            <Checkbox
-                                label="Check Collisions"
-                                checked={meshNode()?.checkCollisions}
-                                onChange={(e) => {
-                                    const m = meshNode()
-                                    if (m) {
-                                        m.checkCollisions =
-                                            e.currentTarget.checked
-                                        props.scheduleAutoSave()
-                                    }
-                                }}
-                            />
-                            <Select
-                                label="Billboard Mode"
-                                options={[
-                                    { label: 'None', value: '0' },
-                                    { label: 'All', value: '7' },
-                                    { label: 'X axis', value: '1' },
-                                    { label: 'Y axis', value: '2' },
-                                    { label: 'Z axis', value: '4' },
-                                ]}
-                                value={String(meshNode()?.billboardMode ?? 0)}
-                                onChange={(e) => {
-                                    const m = meshNode()
-                                    if (m) {
-                                        m.billboardMode = Number.parseInt(
-                                            e.currentTarget.value
-                                        )
-                                        props.scheduleAutoSave()
-                                    }
-                                }}
-                            />
-                        </div>
-                    </Collapsible>
+                    <PhysicsProperties
+                        node={meshNode}
+                        scheduleAutoSave={props.scheduleAutoSave}
+                    />
+                    <MeshRenderingProperties
+                        node={meshNode}
+                        scheduleAutoSave={props.scheduleAutoSave}
+                    />
                     <MaterialProperties
                         node={meshNode}
                         imageAssets={props.imageAssets}
@@ -940,260 +1216,16 @@ export default function PropertiesPanel(
                 </Show>
                 <Switch>
                     <Match when={props.node() instanceof Light}>
-                        <>
-                            <Collapsible
-                                title="Transform"
-                                contentClass={sectionContentClass}
-                            >
-                                <div class="pt-0.5">
-                                    <Vector3Input
-                                        value={() => lightNode()?.position}
-                                        onChange={(axis, value) => {
-                                            const l = lightNode()
-                                            if (l) {
-                                                l.position[axis] = value
-                                                props.scheduleAutoSave()
-                                            }
-                                        }}
-                                    />
-                                </div>
-                            </Collapsible>
-
-                            <Collapsible
-                                title="Light"
-                                headerClass={sectionHeaderClass}
-                                contentClass={sectionContentClass}
-                            >
-                                <div class="flex flex-col gap-2 pt-0.5">
-                                    <Input
-                                        label="Intensity"
-                                        type="number"
-                                        min="0"
-                                        step="0.1"
-                                        value={fmt(lightNode()?.intensity)}
-                                        onInput={(e) => {
-                                            const l = lightNode()
-                                            if (l) {
-                                                l.intensity = Number.parseFloat(
-                                                    e.currentTarget.value
-                                                )
-                                                props.scheduleAutoSave()
-                                            }
-                                        }}
-                                    />
-                                    <Color3Input
-                                        label="Diffuse"
-                                        value={() => lightNode()?.diffuse}
-                                        onChange={(c) => {
-                                            const l = lightNode()
-                                            if (l) {
-                                                l.diffuse = c
-                                                props.scheduleAutoSave()
-                                            }
-                                        }}
-                                    />
-                                    <Color3Input
-                                        label="Specular"
-                                        value={() => lightNode()?.specular}
-                                        onChange={(c) => {
-                                            const l = lightNode()
-                                            if (l) {
-                                                l.specular = c
-                                                props.scheduleAutoSave()
-                                            }
-                                        }}
-                                    />
-                                    <Input
-                                        label="Range"
-                                        type="number"
-                                        min="0"
-                                        step="1"
-                                        value={fmt(lightNode()?.range)}
-                                        onInput={(e) => {
-                                            const l = lightNode()
-                                            if (l) {
-                                                l.range = Number.parseFloat(
-                                                    e.currentTarget.value
-                                                )
-                                                props.scheduleAutoSave()
-                                            }
-                                        }}
-                                    />
-                                    <Input
-                                        label="Radius"
-                                        type="number"
-                                        min="0"
-                                        step="0.1"
-                                        value={fmt(lightNode()?.radius)}
-                                        onInput={(e) => {
-                                            const l = lightNode()
-                                            if (l) {
-                                                l.radius = Number.parseFloat(
-                                                    e.currentTarget.value
-                                                )
-                                                props.scheduleAutoSave()
-                                            }
-                                        }}
-                                    />
-                                    <Input
-                                        label="Shadow Min Z"
-                                        type="number"
-                                        step="0.1"
-                                        value={fmt(lightNode()?.shadowMinZ)}
-                                        onInput={(e) => {
-                                            const l = lightNode()
-                                            if (l) {
-                                                l.shadowMinZ =
-                                                    Number.parseFloat(
-                                                        e.currentTarget.value
-                                                    )
-                                                props.scheduleAutoSave()
-                                            }
-                                        }}
-                                    />
-                                    <Input
-                                        label="Shadow Max Z"
-                                        type="number"
-                                        step="0.1"
-                                        value={fmt(lightNode()?.shadowMaxZ)}
-                                        onInput={(e) => {
-                                            const l = lightNode()
-                                            if (l) {
-                                                l.shadowMaxZ =
-                                                    Number.parseFloat(
-                                                        e.currentTarget.value
-                                                    )
-                                                props.scheduleAutoSave()
-                                            }
-                                        }}
-                                    />
-                                    <Checkbox
-                                        label="Enabled"
-                                        checked={lightNode()?.isEnabled()}
-                                        onChange={(e) => {
-                                            const l = lightNode()
-                                            if (l) {
-                                                l.setEnabled(
-                                                    e.currentTarget.checked
-                                                )
-                                                props.scheduleAutoSave()
-                                            }
-                                        }}
-                                    />
-                                </div>
-                            </Collapsible>
-                        </>
+                        <LightProperties
+                            node={lightNode}
+                            scheduleAutoSave={props.scheduleAutoSave}
+                        />
                     </Match>
                     <Match when={props.node() instanceof Camera}>
-                        <>
-                            <Collapsible
-                                title="Transform"
-                                contentClass={sectionContentClass}
-                            >
-                                <div class="pt-0.5">
-                                    <Vector3Input
-                                        value={() => cameraNode()?.position}
-                                        onChange={(axis, value) => {
-                                            const c = cameraNode()
-                                            if (c) {
-                                                c.position[axis] = value
-                                                props.scheduleAutoSave()
-                                            }
-                                        }}
-                                    />
-                                </div>
-                            </Collapsible>
-                            <Collapsible
-                                title="Camera"
-                                headerClass={sectionHeaderClass}
-                                contentClass={sectionContentClass}
-                            >
-                                <div class="flex flex-col gap-2 pt-0.5">
-                                    <Input
-                                        label="FOV"
-                                        type="number"
-                                        min="0.1"
-                                        max="3.14"
-                                        step="0.05"
-                                        value={fmt(cameraNode()?.fov)}
-                                        onInput={(e) => {
-                                            const c = cameraNode()
-                                            if (c) {
-                                                c.fov = Number.parseFloat(
-                                                    e.currentTarget.value
-                                                )
-                                                props.scheduleAutoSave()
-                                            }
-                                        }}
-                                    />
-                                    <Input
-                                        label="Near Clip (minZ)"
-                                        type="number"
-                                        min="0.01"
-                                        step="0.1"
-                                        value={fmt(cameraNode()?.minZ)}
-                                        onInput={(e) => {
-                                            const c = cameraNode()
-                                            if (c) {
-                                                c.minZ = Number.parseFloat(
-                                                    e.currentTarget.value
-                                                )
-                                                props.scheduleAutoSave()
-                                            }
-                                        }}
-                                    />
-                                    <Input
-                                        label="Far Clip (maxZ)"
-                                        type="number"
-                                        min="1"
-                                        step="10"
-                                        value={fmt(cameraNode()?.maxZ)}
-                                        onInput={(e) => {
-                                            const c = cameraNode()
-                                            if (c) {
-                                                c.maxZ = Number.parseFloat(
-                                                    e.currentTarget.value
-                                                )
-                                                props.scheduleAutoSave()
-                                            }
-                                        }}
-                                    />
-                                    <Input
-                                        label="Speed"
-                                        type="number"
-                                        min="0"
-                                        step="0.1"
-                                        value={fmt(cameraNode()?.speed)}
-                                        onInput={(e) => {
-                                            const c = cameraNode()
-                                            if (c) {
-                                                c.speed = Number.parseFloat(
-                                                    e.currentTarget.value
-                                                )
-                                                props.scheduleAutoSave()
-                                            }
-                                        }}
-                                    />
-                                    <Input
-                                        label="Inertia"
-                                        type="number"
-                                        min="0"
-                                        max="1"
-                                        step="0.05"
-                                        value={fmt(cameraNode()?.inertia)}
-                                        onInput={(e) => {
-                                            const c = cameraNode()
-                                            if (c) {
-                                                c.inertia = Number.parseFloat(
-                                                    e.currentTarget.value
-                                                )
-                                                props.scheduleAutoSave()
-                                            }
-                                        }}
-                                    />
-                                </div>
-                            </Collapsible>
-                        </>
+                        <CameraProperties
+                            node={cameraNode}
+                            scheduleAutoSave={props.scheduleAutoSave}
+                        />
                     </Match>
                 </Switch>
             </div>
