@@ -6,6 +6,7 @@ import {
     TransformNode,
     Color3,
     StandardMaterial,
+    Texture,
     Vector3,
     HavokPlugin,
     PhysicsAggregate,
@@ -175,6 +176,26 @@ export async function loadSceneFromJson(
         return { scene }
     } finally {
         URL.revokeObjectURL(url)
+    }
+}
+
+/**
+ * After loading a scene from JSON, re-apply diffuse textures from the asset
+ * store. Serialised blob URLs are temporary and become invalid on page reload,
+ * so we use the `diffuseTexturePath` stored in mesh metadata to restore them.
+ */
+export async function rehydrateTextures(scene: Scene): Promise<void> {
+    for (const mesh of scene.meshes) {
+        const meta = mesh.metadata as Record<string, unknown> | undefined
+        const texPath = meta?.diffuseTexturePath as string | undefined
+        if (!texPath) continue
+        const mat = mesh.material
+        if (!(mat instanceof StandardMaterial)) continue
+        const blob = await getBlob(texPath)
+        if (!blob) continue
+        if (mat.diffuseTexture) mat.diffuseTexture.dispose()
+        const url = URL.createObjectURL(blob)
+        mat.diffuseTexture = new Texture(url, scene)
     }
 }
 

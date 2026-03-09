@@ -98,6 +98,7 @@ function MaterialProperties(
     props: Readonly<{
         node: () => Mesh | undefined
         imageAssets: () => string[]
+        scheduleAutoSave: () => void
     }>
 ) {
     const material = () =>
@@ -132,6 +133,7 @@ function MaterialProperties(
                 delete (mesh.metadata as Record<string, unknown>)
                     .diffuseTexturePath
             }
+            props.scheduleAutoSave()
             return
         }
         const blob = await getBlob(path)
@@ -144,6 +146,7 @@ function MaterialProperties(
         if (!mesh.metadata) mesh.metadata = {}
         const meta = mesh.metadata as Record<string, unknown>
         meta.diffuseTexturePath = path
+        props.scheduleAutoSave()
     }
 
     const textureOptions = () => [
@@ -175,7 +178,10 @@ function MaterialProperties(
                         value={() => material()?.diffuseColor}
                         onChange={(c) => {
                             const m = material()
-                            if (m) m.diffuseColor = c
+                            if (m) {
+                                m.diffuseColor = c
+                                props.scheduleAutoSave()
+                            }
                         }}
                     />
                     <Color3Input
@@ -183,7 +189,10 @@ function MaterialProperties(
                         value={() => material()?.specularColor}
                         onChange={(c) => {
                             const m = material()
-                            if (m) m.specularColor = c
+                            if (m) {
+                                m.specularColor = c
+                                props.scheduleAutoSave()
+                            }
                         }}
                     />
                     <Color3Input
@@ -191,7 +200,10 @@ function MaterialProperties(
                         value={() => material()?.emissiveColor}
                         onChange={(c) => {
                             const m = material()
-                            if (m) m.emissiveColor = c
+                            if (m) {
+                                m.emissiveColor = c
+                                props.scheduleAutoSave()
+                            }
                         }}
                     />
                     <Color3Input
@@ -199,7 +211,10 @@ function MaterialProperties(
                         value={() => material()?.ambientColor}
                         onChange={(c) => {
                             const m = material()
-                            if (m) m.ambientColor = c
+                            if (m) {
+                                m.ambientColor = c
+                                props.scheduleAutoSave()
+                            }
                         }}
                     />
                     <Input
@@ -211,10 +226,12 @@ function MaterialProperties(
                         value={fmt(material()?.alpha)}
                         onChange={(e) => {
                             const m = material()
-                            if (m)
+                            if (m) {
                                 m.alpha = Number.parseFloat(
                                     e.currentTarget.value
                                 )
+                                props.scheduleAutoSave()
+                            }
                         }}
                     />
                     <Input
@@ -225,10 +242,12 @@ function MaterialProperties(
                         value={fmt(material()?.specularPower)}
                         onChange={(e) => {
                             const m = material()
-                            if (m)
+                            if (m) {
                                 m.specularPower = Number.parseFloat(
                                     e.currentTarget.value
                                 )
+                                props.scheduleAutoSave()
+                            }
                         }}
                     />
                     <Input
@@ -240,10 +259,12 @@ function MaterialProperties(
                         value={fmt(material()?.roughness)}
                         onChange={(e) => {
                             const m = material()
-                            if (m)
+                            if (m) {
                                 m.roughness = Number.parseFloat(
                                     e.currentTarget.value
                                 )
+                                props.scheduleAutoSave()
+                            }
                         }}
                     />
                     <Checkbox
@@ -251,7 +272,10 @@ function MaterialProperties(
                         checked={material()?.wireframe}
                         onChange={(e) => {
                             const m = material()
-                            if (m) m.wireframe = e.currentTarget.checked
+                            if (m) {
+                                m.wireframe = e.currentTarget.checked
+                                props.scheduleAutoSave()
+                            }
                         }}
                     />
                     <Checkbox
@@ -259,7 +283,10 @@ function MaterialProperties(
                         checked={material()?.backFaceCulling}
                         onChange={(e) => {
                             const m = material()
-                            if (m) m.backFaceCulling = e.currentTarget.checked
+                            if (m) {
+                                m.backFaceCulling = e.currentTarget.checked
+                                props.scheduleAutoSave()
+                            }
                         }}
                     />
                 </div>
@@ -482,6 +509,7 @@ export default function PropertiesPanel(
         setNodeTick: Setter<number>
         scriptAssets: Accessor<string[]>
         imageAssets: Accessor<string[]>
+        scheduleAutoSave: () => void
     }>
 ) {
     const meshNode = () => props.node() as Mesh | undefined
@@ -640,6 +668,7 @@ export default function PropertiesPanel(
                     <MaterialProperties
                         node={meshNode}
                         imageAssets={props.imageAssets}
+                        scheduleAutoSave={props.scheduleAutoSave}
                     />
                 </Show>
                 <Switch>

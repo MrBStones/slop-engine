@@ -224,6 +224,7 @@ export function EditorLayout(props: Readonly<EditorLayoutProps>) {
                                 setNodeTick={setNodeTick}
                                 scriptAssets={scriptAssets}
                                 imageAssets={imageAssets}
+                                scheduleAutoSave={props.scheduleAutoSave}
                             />
                         </Resizable.Panel>
                     </Resizable>

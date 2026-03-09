@@ -1,9 +1,4 @@
-import {
-    createEffect,
-    onMount,
-    onCleanup,
-    untrack,
-} from 'solid-js'
+import { createEffect, onMount, onCleanup, untrack } from 'solid-js'
 import {
     Engine,
     Scene,
@@ -19,6 +14,7 @@ import {
 import {
     createDefaultScene,
     loadSceneFromJson,
+    rehydrateTextures,
     serializeScene,
     setupEditorCamera,
     captureSceneSnapshot,
@@ -166,6 +162,7 @@ export function useEditorEngine(state: EditorState) {
                     physicsPlugin
                 )
                 sceneInstance = result.scene
+                await rehydrateTextures(sceneInstance)
             } catch {
                 const result = createDefaultScene(eng, physicsPlugin)
                 sceneInstance = result.scene
