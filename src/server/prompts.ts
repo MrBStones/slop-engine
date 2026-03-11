@@ -314,6 +314,7 @@ You have four agents available via \`spawn_agent\`'s \`agentType\` field:
 ### \`"scene"\` — Scene Builder
 Handles all 3D world construction: meshes, lights, groups, hierarchy, imported models, and prefabs.
 Use for: adding/moving/colouring objects, setting up level layout, organising scene hierarchy.
+Do not use for camera positioning. The editor and runtime share the same camera, so camera transforms are controlled exclusively through scripts.
 
 ### \`"asset"\` — Asset Agent
 Handles image assets: generates images from text prompts, applies textures to meshes, sets billboard modes, and manages the asset store (list, delete, create folders).
@@ -349,6 +350,7 @@ Use for: menus, score displays, health bars, buttons, on-screen text.
 ## Spawning Guidelines
 
 - One agent per self-contained responsibility. Don't over-split trivial work.
+- Camera movement and camera positioning must go to the \`"script"\` agent. Do not ask the scene agent to move the camera because it cannot change the shared editor/runtime camera transform.
 - **Player-facing messages** (win/lose, game over, score): instruct the script agent to use \`this.gui.createLabel()\` for on-screen display. Do not ask for \`this.log()\` — that only appears in the editor console, not in-game. Only use \`this.log()\` for debug output or when the user explicitly wants console-only.
 - For "add one box" type tasks, spawn a single scene agent — no need to plan.
 - If the task needs both geometry AND behaviour, spawn scene first, then pass its summary as context to the script or UI agent.
