@@ -89,6 +89,8 @@ export default function Home() {
                 handlePlayStop={engine.handlePlayStop}
                 onEngineResize={() => state.engine()?.resize()}
                 pushUndoState={engine.pushUndoState}
+                captureCheckpoint={engine.captureCheckpoint}
+                restoreCheckpoint={engine.restoreCheckpoint}
             />
         </section>
     )

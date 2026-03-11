@@ -33,7 +33,19 @@ import type { SceneSnapshot } from '../scene/EditorScene'
 import { ScriptRuntime } from '../scripting/ScriptRuntime'
 import { clearLogs } from '../scripting/consoleStore'
 import { getInitializedHavok } from '../utils/editorUtils'
+import {
+    getAllBlobs,
+    restoreAllBlobs,
+    getAssetStore,
+    type AssetNode,
+} from '../assetStore'
 import type { EditorState, GizmoType } from './useEditorState'
+
+export interface Checkpoint {
+    sceneJson: string
+    blobs: Map<string, Blob>
+    assetTree: AssetNode
+}
 
 const MAX_UNDO_STEPS = 50
 
@@ -422,6 +434,74 @@ export function useEditorEngine(state: EditorState) {
         }
     }
 
+    async function captureCheckpoint(): Promise<Checkpoint | null> {
+        const s = scene()
+        if (!s || isPlaying()) return null
+        try {
+            const sceneJson = serializeScene(s)
+            const blobs = await getAllBlobs()
+            const assetTree = structuredClone(getAssetStore().tree())
+            return { sceneJson, blobs, assetTree }
+        } catch {
+            return null
+        }
+    }
+
+    async function restoreCheckpoint(cp: Checkpoint): Promise<void> {
+        const eng = engine()
+        const s = scene()
+        if (!eng || !s || !_physicsPlugin || isPlaying()) return
+
+        // Restore blobs and asset tree
+        await restoreAllBlobs(cp.blobs)
+        getAssetStore().setTree(structuredClone(cp.assetTree))
+
+        const canvas = document.getElementById('canvas') as HTMLCanvasElement
+
+        // Load new scene from checkpoint JSON
+        const { scene: newScene } = await loadSceneFromJson(
+            eng,
+            cp.sceneJson,
+            _physicsPlugin
+        )
+        await rehydrateTextures(newScene)
+        setupEditorCamera(newScene, canvas)
+
+        // Create new gizmo manager for the new scene
+        const utilityLayer = new UtilityLayerRenderer(newScene)
+        const gm = new GizmoManager(newScene, undefined, utilityLayer)
+        gm.positionGizmoEnabled = false
+        gm.rotationGizmoEnabled = false
+        gm.scaleGizmoEnabled = false
+        gm.enableAutoPicking = false
+        gm.boundingBoxGizmoEnabled = false
+
+        // Attach auto-save observers to new scene
+        newScene.onNewMeshAddedObservable.add(() => scheduleAutoSave())
+        newScene.onMeshRemovedObservable.add(() => scheduleAutoSave())
+        newScene.onNewLightAddedObservable.add(() => scheduleAutoSave())
+        newScene.onLightRemovedObservable.add(() => scheduleAutoSave())
+        newScene.onNewTransformNodeAddedObservable.add(() => scheduleAutoSave())
+        newScene.onTransformNodeRemovedObservable.add(() => scheduleAutoSave())
+
+        // Dispose old scene & gizmo manager
+        const oldGm = gizmoManager()
+        oldGm?.dispose()
+        s.dispose()
+
+        // Clear undo/redo stacks since scene is replaced
+        _undoStack.length = 0
+        _redoStack.length = 0
+        setUndoRedoVersion((v) => v + 1)
+
+        // Update all signals
+        setSelectedNode(undefined)
+        setGizmoManager(gm)
+        setScene(newScene)
+        setNodeTick((t) => t + 1)
+        scheduleAutoSave()
+    }
+
     return {
         scheduleAutoSave,
         performSave,
@@ -432,5 +512,7 @@ export function useEditorEngine(state: EditorState) {
         pushUndoState,
         canUndo,
         canRedo,
+        captureCheckpoint,
+        restoreCheckpoint,
     }
 }

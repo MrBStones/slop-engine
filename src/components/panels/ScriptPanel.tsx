@@ -6,6 +6,10 @@ import {
     closeScriptFile,
 } from '../../scriptEditorStore'
 import apiTypes from '../../scripting/api.d.ts?raw'
+import { getAssetStore } from '../../assetStore'
+import { getBlob } from '../../assetStore'
+import { generateScriptRegistry } from '../../scripting/scriptRegistry'
+import type { ScriptSource } from '../../scripting/scriptRegistry'
 
 /** Map file extensions to Monaco language ids. */
 function extToLanguage(path: string): string {
@@ -28,6 +32,37 @@ const monacoTs = (monaco.languages as any).typescript as {
     ScriptTarget: Record<string, number>
     ModuleKind: Record<string, number>
     ModuleResolutionKind: Record<string, number>
+}
+
+/** Collect all .ts script sources from the asset store. */
+async function collectScriptSources(): Promise<ScriptSource[]> {
+    const store = getAssetStore()
+    const allPaths = store.collectFilePaths(store.tree())
+    const tsPaths = allPaths.filter((p) => p.endsWith('.ts'))
+    const sources: ScriptSource[] = []
+    for (const path of tsPaths) {
+        const blob = await getBlob(path)
+        if (!blob) continue
+        sources.push({ path, source: await blob.text() })
+    }
+    return sources
+}
+
+let _registryLibDisposable: { dispose(): void } | null = null
+
+/** Regenerate the ScriptRegistry type declaration and feed it to Monaco. */
+async function regenerateRegistry() {
+    const scripts = await collectScriptSources()
+    const decl = generateScriptRegistry(scripts)
+    _registryLibDisposable?.dispose()
+    if (decl) {
+        _registryLibDisposable = monacoTs.typescriptDefaults.addExtraLib(
+            decl,
+            'slop-engine://script-registry.d.ts'
+        )
+    } else {
+        _registryLibDisposable = null
+    }
 }
 
 /** Configure Monaco's TypeScript defaults for script editing. */
@@ -73,6 +108,7 @@ export default function ScriptPanel() {
         if (!container) return
 
         configureMonacoDefaults()
+        void regenerateRegistry()
 
         editor = monaco.editor.create(container, {
             value: '',
@@ -91,6 +127,7 @@ export default function ScriptPanel() {
             clearTimeout(saveTimeout)
             saveTimeout = setTimeout(() => {
                 saveScriptFile(script.path, editor!.getValue())
+                void regenerateRegistry()
             }, 500)
         })
     })
@@ -99,6 +136,8 @@ export default function ScriptPanel() {
         clearTimeout(saveTimeout)
         _apiLibDisposable?.dispose()
         _apiLibDisposable = null
+        _registryLibDisposable?.dispose()
+        _registryLibDisposable = null
         _tsDefaultsConfigured = false
         editor?.dispose()
     })

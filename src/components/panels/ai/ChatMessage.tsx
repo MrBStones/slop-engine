@@ -1,4 +1,4 @@
-import { For, Show } from 'solid-js'
+import { createSignal, For, Show } from 'solid-js'
 import { isToolPart } from './types'
 import { groupPartsInOrder, parseContent } from './utils'
 import { CodeBlock } from './CodeBlock'
@@ -8,9 +8,11 @@ export function ChatMessage(
     props: Readonly<{
         role: string
         parts: Array<{ type: string; text?: string; [key: string]: unknown }>
+        onUndo?: () => Promise<void>
     }>
 ) {
     const isUser = () => props.role === 'user'
+    const [isUndoing, setIsUndoing] = createSignal(false)
 
     const segments = () => groupPartsInOrder(props.parts, isToolPart)
     const hasContent = () =>
@@ -19,6 +21,16 @@ export function ChatMessage(
                 isToolPart(p) ||
                 (p.type === 'text' && (p.text?.length ?? 0) > 0)
         )
+
+    const handleUndo = async () => {
+        if (!props.onUndo || isUndoing()) return
+        setIsUndoing(true)
+        try {
+            await props.onUndo()
+        } finally {
+            setIsUndoing(false)
+        }
+    }
 
     return (
         <Show when={hasContent()}>
@@ -62,6 +74,34 @@ export function ChatMessage(
                             )
                         }
                     </For>
+                    <Show when={props.onUndo}>
+                        <div class="mt-2 pt-2 border-t border-gray-700">
+                            <button
+                                type="button"
+                                class="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                onClick={handleUndo}
+                                disabled={isUndoing()}
+                                title="Undo all scene changes from this response"
+                            >
+                                <svg
+                                    class="w-3.5 h-3.5"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"
+                                    />
+                                </svg>
+                                {isUndoing()
+                                    ? 'Restoring…'
+                                    : 'Undo scene changes'}
+                            </button>
+                        </div>
+                    </Show>
                 </div>
             </div>
         </Show>

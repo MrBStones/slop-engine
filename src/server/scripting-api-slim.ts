@@ -15,6 +15,8 @@ declare class Script {
     start(): void
     update(): void
     destroy(): void
+    getScript<T = Script>(path: string): T | null
+    getScriptOn<T = Script>(node: SceneNode, path: string): T | null
     findNode(name: string): SceneNode | null
     findMesh(name: string): Mesh | null
     log(...args: any[]): void

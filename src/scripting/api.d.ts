@@ -73,6 +73,41 @@ declare class Script {
     /** Called when play mode stops. Use this to clean up. */
     destroy(): void
 
+    // -- Script references ----------------------------------------------------
+
+    /**
+     * Get another script attached to **this same node** by its file path.
+     * Returns null if no script with that path is attached to this node.
+     *
+     * The return type is automatically inferred when the ScriptRegistry
+     * knows about the target path (i.e. it exists in the project).
+     *
+     * @param path  The asset path of the script (e.g. `'scripts/Health.ts'`).
+     *
+     * @example
+     * // Both scripts attached to the same node:
+     * const health = this.getScript('scripts/Health.ts')
+     * if (health) {
+     *     this.log('HP:', health.hp)
+     *     health.takeDamage(10)
+     * }
+     */
+    getScript<T = Script>(path: string): T | null
+
+    /**
+     * Get a script attached to a **different node** by its file path.
+     * Returns null if the node has no script with that path.
+     *
+     * @param node  The node to search on.
+     * @param path  The asset path of the script (e.g. `'scripts/EnemyAI.ts'`).
+     *
+     * @example
+     * const enemy = this.findNode('Enemy')!
+     * const ai = this.getScriptOn(enemy, 'scripts/EnemyAI.ts')
+     * ai?.alert()
+     */
+    getScriptOn<T = Script>(node: SceneNode, path: string): T | null
+
     // -- Helpers --------------------------------------------------------------
 
     /** Find a node in the scene by name. Returns null if not found. */

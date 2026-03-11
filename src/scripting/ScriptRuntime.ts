@@ -235,6 +235,13 @@ export class ScriptRuntime {
     private _observer: Observer<Scene> | null = null
     private _startTime = 0
     private _world: RuntimeWorld | null = null
+    /** Maps nodeUniqueId → scriptPath → Script instance for cross-script lookups. */
+    private _byNodeAndPath = new Map<number, Map<string, Script>>()
+
+    /** Look up a script instance by node ID and file path. */
+    private _lookupScript = (nodeId: number, path: string): Script | null => {
+        return this._byNodeAndPath.get(nodeId)?.get(path) ?? null
+    }
 
     /**
      * Collect all nodes with `metadata.scripts`, compile each script,
@@ -292,6 +299,16 @@ export class ScriptRuntime {
                     instance.deltaTime = 0
                     instance.time = 0
                     instance._world = this._world!
+                    instance._lookup = this._lookupScript
+
+                    // Register in the lookup map
+                    const nodeId = (node as any).uniqueId as number
+                    let nodeMap = this._byNodeAndPath.get(nodeId)
+                    if (!nodeMap) {
+                        nodeMap = new Map()
+                        this._byNodeAndPath.set(nodeId, nodeMap)
+                    }
+                    nodeMap.set(path, instance)
 
                     this._scripts.push({ instance, node, path })
                 } catch (err) {
@@ -377,6 +394,7 @@ export class ScriptRuntime {
         }
 
         this._scripts = []
+        this._byNodeAndPath.clear()
 
         // Dispose all runtime-created objects after user destroy() calls
         if (this._world) {

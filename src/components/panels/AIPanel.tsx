@@ -22,15 +22,8 @@ import {
     generateChatId,
     titleFromMessages,
 } from '../../chatHistoryStore'
-import {
-    fixErrorRequest,
-    clearFixErrorRequest,
-} from '../../aiRequestStore'
-import {
-    isToolPart,
-    getToolNameFromPart,
-    type ToolUIPart,
-} from './ai/types'
+import { fixErrorRequest, clearFixErrorRequest } from '../../aiRequestStore'
+import { isToolPart, getToolNameFromPart, type ToolUIPart } from './ai/types'
 import {
     getSubagent,
     restoreSubagentStates,
@@ -56,6 +49,12 @@ export default function AIPanel(
         isPlaying: Accessor<boolean>
         requestPlay: () => Promise<void>
         requestStop: () => Promise<void>
+        captureCheckpoint: () => Promise<
+            import('../../hooks/useEditorEngine').Checkpoint | null
+        >
+        restoreCheckpoint: (
+            cp: import('../../hooks/useEditorEngine').Checkpoint
+        ) => Promise<void>
     }>
 ) {
     const [input, setInput] = createSignal('')
@@ -69,6 +68,13 @@ export default function AIPanel(
         createSignal(generateChatId()),
         { name: 'slop-ai-active-chat' }
     )
+
+    // Checkpoint system: map from user message index to full checkpoint
+    const checkpoints = new Map<
+        number,
+        import('../../hooks/useEditorEngine').Checkpoint
+    >()
+    const [checkpointTick, setCheckpointTick] = createSignal(0)
 
     let scrollContainer: HTMLDivElement | undefined
     let inputRef: HTMLTextAreaElement | undefined
@@ -93,8 +99,9 @@ export default function AIPanel(
                     ? {
                           name: node.name,
                           type:
-                              (node as { getClassName?: () => string })
-                                  .getClassName?.() ?? 'Node',
+                              (
+                                  node as { getClassName?: () => string }
+                              ).getClassName?.() ?? 'Node',
                       }
                     : undefined
                 return {
@@ -291,7 +298,13 @@ export default function AIPanel(
         if (!err) return
         clearFixErrorRequest()
         setView('chat')
-        startNewChat().then(() => {
+        startNewChat().then(async () => {
+            const checkpoint = await props.captureCheckpoint()
+            const msgIndex = chat.messages.length
+            if (checkpoint) {
+                checkpoints.set(msgIndex, checkpoint)
+                setCheckpointTick((t) => t + 1)
+            }
             chat.sendMessage({
                 text: `Fix this error:\n\n${err}`,
             })
@@ -348,6 +361,8 @@ export default function AIPanel(
         setActiveChatId(newId)
         chat.setMessages([])
         restoreSubagentStates({})
+        checkpoints.clear()
+        setCheckpointTick((t) => t + 1)
         roundTripCount = 0
         recentAutoSendKeys.length = 0
         consecutiveErrorCounts.clear()
@@ -371,6 +386,8 @@ export default function AIPanel(
             chat.setMessages(session.messages)
             restoreSubagentStates(session.subagentStates ?? {})
         }
+        checkpoints.clear()
+        setCheckpointTick((t) => t + 1)
         setView('chat')
         inputRef?.focus()
     }
@@ -396,11 +413,27 @@ export default function AIPanel(
         const content = input().trim()
         if (!content || isWorking()) return
 
+        // Capture scene checkpoint before AI starts working
+        const checkpoint = await props.captureCheckpoint()
+        const msgIndex = chat.messages.length
+        if (checkpoint) {
+            checkpoints.set(msgIndex, checkpoint)
+            setCheckpointTick((t) => t + 1)
+        }
+
         setInput('')
         roundTripCount = 0
         recentAutoSendKeys.length = 0
         consecutiveErrorCounts.clear()
         await chat.sendMessage({ text: content })
+    }
+
+    const handleUndoCheckpoint = async (userMsgIndex: number) => {
+        const cp = checkpoints.get(userMsgIndex)
+        if (!cp) return
+        await props.restoreCheckpoint(cp)
+        checkpoints.delete(userMsgIndex)
+        setCheckpointTick((t) => t + 1)
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -450,9 +483,15 @@ export default function AIPanel(
                                 : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
                         }`}
                         onClick={() =>
-                            setView((v) => (v === 'history' ? 'chat' : 'history'))
+                            setView((v) =>
+                                v === 'history' ? 'chat' : 'history'
+                            )
                         }
-                        title={view() === 'history' ? 'Back to chat' : 'Chat history'}
+                        title={
+                            view() === 'history'
+                                ? 'Back to chat'
+                                : 'Chat history'
+                        }
                         type="button"
                     >
                         <svg
@@ -476,9 +515,13 @@ export default function AIPanel(
                                 : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
                         }`}
                         onClick={() =>
-                            setView((v) => (v === 'settings' ? 'chat' : 'settings'))
+                            setView((v) =>
+                                v === 'settings' ? 'chat' : 'settings'
+                            )
                         }
-                        title={view() === 'settings' ? 'Back to chat' : 'Settings'}
+                        title={
+                            view() === 'settings' ? 'Back to chat' : 'Settings'
+                        }
                         type="button"
                     >
                         <svg
@@ -573,17 +616,47 @@ export default function AIPanel(
                         }
                     >
                         <For each={chat.messages}>
-                            {(message) => (
-                                <ChatMessage
-                                    role={message.role}
-                                    parts={
-                                        message.parts as Array<{
-                                            type: string
-                                            text?: string
-                                        }>
-                                    }
-                                />
-                            )}
+                            {(message, index) => {
+                                const hasToolCalls = () =>
+                                    message.role === 'assistant' &&
+                                    message.parts?.some((p: { type: string }) =>
+                                        p.type.startsWith('tool-')
+                                    )
+
+                                const userMsgIndex = () => {
+                                    const i = index()
+                                    return i > 0 ? i - 1 : -1
+                                }
+
+                                const canUndoCheckpoint = () => {
+                                    checkpointTick()
+                                    return (
+                                        hasToolCalls() &&
+                                        !isWorking() &&
+                                        checkpoints.has(userMsgIndex())
+                                    )
+                                }
+
+                                return (
+                                    <ChatMessage
+                                        role={message.role}
+                                        parts={
+                                            message.parts as Array<{
+                                                type: string
+                                                text?: string
+                                            }>
+                                        }
+                                        onUndo={
+                                            canUndoCheckpoint()
+                                                ? () =>
+                                                      handleUndoCheckpoint(
+                                                          userMsgIndex()
+                                                      )
+                                                : undefined
+                                        }
+                                    />
+                                )
+                            }}
                         </For>
 
                         <Show when={isWorking()}>

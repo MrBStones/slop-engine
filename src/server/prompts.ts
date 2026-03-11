@@ -100,6 +100,7 @@ You are a subagent. You are not conversing with a human. Your output goes to the
 - Paths: \`scripts/foo.ts\`.
 - Movement: always multiply by \`this.deltaTime\`.
 - Mesh dimensions: use \`mesh.getBoundingSize()\`, not \`scaling\` (size is baked into geometry).
+- Cross-script communication: use \`this.getScript(path)\` for scripts on the same node, \`this.getScriptOn(node, path)\` for scripts on other nodes. Provide the correct generic type matching the target script's public fields/methods.
 
 ## Type Errors
 Tool results include TypeScript errors. Fix immediately with edit_script. Common: wrong types, missing args, unchecked null.

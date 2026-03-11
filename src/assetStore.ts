@@ -59,6 +59,40 @@ export async function clearAllBlobs(): Promise<void> {
     })
 }
 
+export async function getAllBlobs(): Promise<Map<string, Blob>> {
+    const db = await openDB()
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly')
+        const store = tx.objectStore(STORE_NAME)
+        const req = store.openCursor()
+        const result = new Map<string, Blob>()
+        req.onsuccess = () => {
+            const cursor = req.result
+            if (cursor) {
+                result.set(cursor.key as string, cursor.value as Blob)
+                cursor.continue()
+            } else {
+                resolve(result)
+            }
+        }
+        req.onerror = () => reject(req.error)
+    })
+}
+
+export async function restoreAllBlobs(blobs: Map<string, Blob>): Promise<void> {
+    const db = await openDB()
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite')
+        const store = tx.objectStore(STORE_NAME)
+        store.clear()
+        for (const [path, blob] of blobs) {
+            store.put(blob, path)
+        }
+        tx.oncomplete = () => resolve()
+        tx.onerror = () => reject(tx.error)
+    })
+}
+
 export interface AssetNode {
     id: string
     name: string
@@ -255,7 +289,8 @@ export function createAssetStore() {
             const sourceParentPath = getParentPath(sourcePath)
             const isCrossParent = sourceParentPath !== targetParentPath
             // For cross-parent moves, prevent dropping into own subtree
-            if (isCrossParent && sourcePath.startsWith(targetParentPath + '/')) return
+            if (isCrossParent && sourcePath.startsWith(targetParentPath + '/'))
+                return
 
             setTree((prev) => {
                 const next = JSON.parse(JSON.stringify(prev))
@@ -289,8 +324,7 @@ export function createAssetStore() {
                     src.path = newPath
                 }
 
-                const insertIdx =
-                    position === 'before' ? tgtIdx : tgtIdx + 1
+                const insertIdx = position === 'before' ? tgtIdx : tgtIdx + 1
                 newParent.children = newParent.children ?? []
                 newParent.children.splice(insertIdx, 0, src)
                 return next

@@ -12,6 +12,7 @@ import {
 } from '../panels'
 import { Tabs, TabPanel } from '../ui'
 import type { EditorState } from '../../hooks/useEditorState'
+import type { Checkpoint } from '../../hooks/useEditorEngine'
 
 interface EditorLayoutProps {
     readonly state: EditorState
@@ -19,6 +20,8 @@ interface EditorLayoutProps {
     readonly handlePlayStop: () => void | Promise<void>
     readonly onEngineResize: () => void
     readonly pushUndoState: () => void
+    readonly captureCheckpoint: () => Promise<Checkpoint | null>
+    readonly restoreCheckpoint: (cp: Checkpoint) => Promise<void>
 }
 
 export function EditorLayout(props: Readonly<EditorLayoutProps>) {
@@ -76,6 +79,8 @@ export function EditorLayout(props: Readonly<EditorLayoutProps>) {
                         if (props.state.isPlaying())
                             await props.handlePlayStop()
                     }}
+                    captureCheckpoint={props.captureCheckpoint}
+                    restoreCheckpoint={props.restoreCheckpoint}
                 />
             </Resizable.Panel>
             <Resizable.Handle

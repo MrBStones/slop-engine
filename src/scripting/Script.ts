@@ -86,6 +86,9 @@ export class Script<N extends Node = TransformNode> {
     /** @internal Set by ScriptRuntime before start(). */
     _world!: RuntimeWorld
 
+    /** @internal Lookup function set by ScriptRuntime before start(). */
+    _lookup!: (nodeId: number, path: string) => Script | null
+
     /** GUI overlay — create buttons and labels that communicate with your script. */
     get gui(): RuntimeWorld['gui'] {
         return this._world.gui
@@ -94,6 +97,21 @@ export class Script<N extends Node = TransformNode> {
     /** @internal Collision callbacks registered by this script. */
     _collisionStartCallbacks: CollisionCallback[] = []
     _collisionEndCallbacks: CollisionCallback[] = []
+
+    // -- Script references ----------------------------------------------------
+
+    /** Get another script attached to this same node by its file path. */
+    getScript<T = Script>(path: string): T | null {
+        return this._lookup(
+            (this.node as any).uniqueId,
+            path
+        ) as T | null
+    }
+
+    /** Get a script attached to a different node by its file path. */
+    getScriptOn<T = Script>(node: Node, path: string): T | null {
+        return this._lookup((node as any).uniqueId, path) as T | null
+    }
 
     // -- Helpers --------------------------------------------------------------
 
