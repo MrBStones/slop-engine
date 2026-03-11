@@ -156,6 +156,7 @@ interface AssetPanelProps {
     scene?: Accessor<Scene | undefined>
     setSelectedNode?: (node: Node | undefined) => void
     setNodeTick?: Setter<number>
+    pushUndoState?: () => void
 }
 
 export default function AssetPanel(props: AssetPanelProps) {
@@ -225,6 +226,7 @@ export default function AssetPanel(props: AssetPanelProps) {
         if (!s || node.type !== 'file') return
         const ext = node.name.slice(node.name.lastIndexOf('.')).toLowerCase()
         if (!MODEL_EXT.includes(ext)) return
+        props.pushUndoState?.()
 
         const blob = await getBlob(node.path)
         if (!blob) return
@@ -247,6 +249,7 @@ export default function AssetPanel(props: AssetPanelProps) {
     async function addPrefabToScene(node: AssetNode) {
         const s = props.scene?.()
         if (!s || node.type !== 'file' || !isPrefabFile(node)) return
+        props.pushUndoState?.()
 
         const blob = await getBlob(node.path)
         if (!blob) return

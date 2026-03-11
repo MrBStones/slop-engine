@@ -209,6 +209,7 @@ export interface ToolExecutorContext {
     selectedNode: Accessor<Node | undefined>
     setSelectedNode: (node: Node | undefined) => void
     setNodeTick: Setter<number>
+    pushUndoState: () => void
     isPlaying: Accessor<boolean>
     requestPlay: () => Promise<void>
     requestStop: () => Promise<void>
@@ -332,6 +333,7 @@ export function createToolExecutor(
     const executeAddMesh = (args: AddMeshOptions): string => {
         const s = ctx.scene()
         if (!s) throw new Error('Scene not initialized')
+        ctx.pushUndoState()
         const mesh = addMeshToScene(s, args)
         ctx.setSelectedNode(mesh)
         ctx.setNodeTick((t) => t + 1)
@@ -341,6 +343,7 @@ export function createToolExecutor(
     const executeAddLight = (args: AddLightOptions): string => {
         const s = ctx.scene()
         if (!s) throw new Error('Scene not initialized')
+        ctx.pushUndoState()
         const light = addLightToScene(s, args)
         ctx.setSelectedNode(light)
         ctx.setNodeTick((t) => t + 1)
@@ -350,6 +353,7 @@ export function createToolExecutor(
     const executeUpdateNode = (args: UpdateNodeOptions): string => {
         const s = ctx.scene()
         if (!s) throw new Error('Scene not initialized')
+        ctx.pushUndoState()
         updateNodeInScene(s, args)
         ctx.setNodeTick((t) => t + 1)
         const fields = Object.keys(args)
@@ -361,6 +365,7 @@ export function createToolExecutor(
     const executeDeleteNode = (args: { name: string }): string => {
         const s = ctx.scene()
         if (!s) throw new Error('Scene not initialized')
+        ctx.pushUndoState()
         const node = s.getNodeByName(args.name)
         if (ctx.selectedNode() === node) {
             ctx.setSelectedNode(undefined)
@@ -373,6 +378,7 @@ export function createToolExecutor(
     const executeCreateGroup = (args: CreateGroupOptions): string => {
         const s = ctx.scene()
         if (!s) throw new Error('Scene not initialized')
+        ctx.pushUndoState()
         const group = createGroupInScene(s, args)
         ctx.setSelectedNode(group)
         ctx.setNodeTick((t) => t + 1)
@@ -385,6 +391,7 @@ export function createToolExecutor(
     }): string => {
         const s = ctx.scene()
         if (!s) throw new Error('Scene not initialized')
+        ctx.pushUndoState()
         setParentInScene(s, args.node, args.parent)
         ctx.setNodeTick((t) => t + 1)
         return args.parent
@@ -397,6 +404,7 @@ export function createToolExecutor(
     }): string => {
         const s = ctx.scene()
         if (!s) throw new Error('Scene not initialized')
+        ctx.pushUndoState()
         const raw = Array.isArray(args.operations) ? args.operations : []
         const operations = sanitizeBulkOperations(
             raw.map((o) =>
@@ -432,6 +440,7 @@ export function createToolExecutor(
     }): string => {
         const s = ctx.scene()
         if (!s) throw new Error('Scene not initialized')
+        ctx.pushUndoState()
         const node = s.getNodeByName(args.node)
         if (!node) throw new Error(`Node "${args.node}" not found`)
         if (!node.metadata) node.metadata = {}
@@ -451,6 +460,7 @@ export function createToolExecutor(
     }): string => {
         const s = ctx.scene()
         if (!s) throw new Error('Scene not initialized')
+        ctx.pushUndoState()
         const node = s.getNodeByName(args.node)
         if (!node) throw new Error(`Node "${args.node}" not found`)
         const meta = node.metadata as { scripts?: string[] } | undefined
@@ -518,6 +528,7 @@ export function createToolExecutor(
     }): Promise<string> => {
         const s = ctx.scene()
         if (s) {
+            ctx.pushUndoState()
             const allNodes = [
                 ...s.meshes,
                 ...s.lights,
@@ -602,6 +613,7 @@ export function createToolExecutor(
     }): Promise<string> => {
         const s = ctx.scene()
         if (!s) throw new Error('Scene not initialized')
+        ctx.pushUndoState()
         const mesh = s.getMeshByName(args.mesh)
         if (!mesh) throw new Error(`Mesh "${args.mesh}" not found`)
         const blob = await getBlob(args.texturePath)
@@ -653,6 +665,7 @@ export function createToolExecutor(
     }): string => {
         const s = ctx.scene()
         if (!s) throw new Error('Scene not initialized')
+        ctx.pushUndoState()
         const mesh = s.getMeshByName(args.mesh)
         if (!mesh) throw new Error(`Mesh "${args.mesh}" not found`)
         const mat = mesh.material as StandardMaterial | null
@@ -700,6 +713,7 @@ export function createToolExecutor(
     const executeRemoveTexture = (args: { mesh: string }): string => {
         const s = ctx.scene()
         if (!s) throw new Error('Scene not initialized')
+        ctx.pushUndoState()
         const mesh = s.getMeshByName(args.mesh)
         if (!mesh) throw new Error(`Mesh "${args.mesh}" not found`)
         const mat = mesh.material as StandardMaterial | null
@@ -737,6 +751,7 @@ export function createToolExecutor(
     }): string => {
         const s = ctx.scene()
         if (!s) throw new Error('Scene not initialized')
+        ctx.pushUndoState()
         const mesh = s.getMeshByName(args.mesh)
         if (!mesh) throw new Error(`Mesh "${args.mesh}" not found`)
         const mode = BILLBOARD_MODES[args.mode.toLowerCase()] ?? 0
@@ -839,6 +854,7 @@ export function createToolExecutor(
     }): Promise<string> => {
         const s = ctx.scene()
         if (!s) throw new Error('Scene not initialized')
+        ctx.pushUndoState()
 
         const store = getAssetStore()
         const node = store.findNode(store.tree(), args.path)

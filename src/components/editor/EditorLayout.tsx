@@ -18,6 +18,7 @@ interface EditorLayoutProps {
     readonly scheduleAutoSave: () => void
     readonly handlePlayStop: () => void | Promise<void>
     readonly onEngineResize: () => void
+    readonly pushUndoState: () => void
 }
 
 export function EditorLayout(props: Readonly<EditorLayoutProps>) {
@@ -65,6 +66,7 @@ export function EditorLayout(props: Readonly<EditorLayoutProps>) {
                     setSelectedNode={setSelectedNode}
                     setNodeTick={setNodeTick}
                     scheduleAutoSave={props.scheduleAutoSave}
+                    pushUndoState={props.pushUndoState}
                     isPlaying={props.state.isPlaying}
                     requestPlay={async () => {
                         if (!props.state.isPlaying())
@@ -164,6 +166,7 @@ export function EditorLayout(props: Readonly<EditorLayoutProps>) {
                                         scene={scene}
                                         setSelectedNode={setSelectedNode}
                                         setNodeTick={setNodeTick}
+                                        pushUndoState={props.pushUndoState}
                                     />
                                 </TabPanel>
                             </Tabs>
@@ -206,6 +209,7 @@ export function EditorLayout(props: Readonly<EditorLayoutProps>) {
                                 setSelectedNode={setSelectedNode}
                                 nodeTick={nodeTick}
                                 setNodeTick={setNodeTick}
+                                pushUndoState={props.pushUndoState}
                             />
                         </Resizable.Panel>
                         <Resizable.Handle class="group basis-3 py-1">
@@ -225,6 +229,7 @@ export function EditorLayout(props: Readonly<EditorLayoutProps>) {
                                 scriptAssets={scriptAssets}
                                 imageAssets={imageAssets}
                                 scheduleAutoSave={props.scheduleAutoSave}
+                                pushUndoState={props.pushUndoState}
                             />
                         </Resizable.Panel>
                     </Resizable>

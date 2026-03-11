@@ -9,6 +9,8 @@ import {
     arrowUpTray,
     arrowRightCircle,
     viewColumns,
+    arrowUturnLeft,
+    arrowUturnRight,
 } from 'solid-heroicons/outline'
 import { Icon } from 'solid-heroicons'
 import { Button, IconButton, Tooltip } from '../ui'
@@ -26,12 +28,42 @@ interface EditorTopbarProps {
     lastSaved: () => Date | null
     selectedGizmo: () => GizmoType
     onGizmoSelect: (gizmo: GizmoType) => void
+    canUndo?: () => boolean
+    canRedo?: () => boolean
+    onUndo?: () => void
+    onRedo?: () => void
 }
 
 export function EditorTopbar(props: Readonly<EditorTopbarProps>) {
     return (
         <div class="flex items-center mb-2 bg-gray-800 p-2 rounded-md gap-5">
             <div class="flex items-center space-x-1 gap-1">
+                <Show when={props.onUndo}>
+                    <Tooltip content="Undo (Ctrl+Z)" position="bottom">
+                        <IconButton
+                            label="Undo"
+                            variant="ghost"
+                            size="sm"
+                            disabled={!props.canUndo?.()}
+                            onClick={props.onUndo}
+                        >
+                            <Icon path={arrowUturnLeft} class="size-5" />
+                        </IconButton>
+                    </Tooltip>
+                </Show>
+                <Show when={props.onRedo}>
+                    <Tooltip content="Redo (Ctrl+Y)" position="bottom">
+                        <IconButton
+                            label="Redo"
+                            variant="ghost"
+                            size="sm"
+                            disabled={!props.canRedo?.()}
+                            onClick={props.onRedo}
+                        >
+                            <Icon path={arrowUturnRight} class="size-5" />
+                        </IconButton>
+                    </Tooltip>
+                </Show>
                 <Button
                     variant={props.isPlaying() ? 'primary' : 'secondary'}
                     size="md"

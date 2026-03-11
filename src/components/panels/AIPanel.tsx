@@ -49,6 +49,7 @@ export default function AIPanel(
         setSelectedNode: (node: import('babylonjs').Node | undefined) => void
         setNodeTick: Setter<number>
         scheduleAutoSave: () => void
+        pushUndoState: () => void
         isPlaying: Accessor<boolean>
         requestPlay: () => Promise<void>
         requestStop: () => Promise<void>
@@ -73,6 +74,7 @@ export default function AIPanel(
         selectedNode: props.selectedNode,
         setSelectedNode: props.setSelectedNode,
         setNodeTick: props.setNodeTick,
+        pushUndoState: props.pushUndoState,
         isPlaying: props.isPlaying,
         requestPlay: props.requestPlay,
         requestStop: props.requestStop,

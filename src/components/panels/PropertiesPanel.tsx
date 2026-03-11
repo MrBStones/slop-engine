@@ -199,11 +199,13 @@ function TransformProperties(
     props: Readonly<{
         node: () => TransformNode | undefined
         scheduleAutoSave: () => void
+        pushUndoState: () => void
     }>
 ) {
     const updateNode = (updater: (node: TransformNode) => void) => {
         const node = props.node()
         if (!node) return
+        props.pushUndoState()
         updater(node)
         props.scheduleAutoSave()
     }
@@ -255,6 +257,7 @@ function MaterialProperties(
         node: () => Mesh | undefined
         imageAssets: () => string[]
         scheduleAutoSave: () => void
+        pushUndoState: () => void
     }>
 ) {
     const material = () =>
@@ -263,6 +266,7 @@ function MaterialProperties(
     const updateMaterial = (updater: (material: StandardMaterial) => void) => {
         const current = material()
         if (!current) return
+        props.pushUndoState()
         updater(current)
         props.scheduleAutoSave()
     }
@@ -291,6 +295,7 @@ function MaterialProperties(
     ) {
         const mesh = props.node()
         if (!mesh) return
+        props.pushUndoState()
 
         const metadata = ensureNodeMetadata(mesh)
         const next = currentTextureTransform()
@@ -578,6 +583,7 @@ function ScriptProperties(
         scriptAssets: Accessor<string[]>
         setNodeTick: Setter<number>
         scheduleAutoSave: () => void
+        pushUndoState: () => void
     }>
 ) {
     const [addPath, setAddPath] = createSignal('')
@@ -673,6 +679,7 @@ function ScriptProperties(
         if (!n || !path) return
         const current = getNodeScripts(n)
         if (!current.includes(path)) {
+            props.pushUndoState()
             setNodeScripts(n, [...current, path])
             props.setNodeTick((t) => t + 1)
             props.scheduleAutoSave()
@@ -683,6 +690,7 @@ function ScriptProperties(
     const removeScript = (path: string) => {
         const n = props.node()
         if (!n) return
+        props.pushUndoState()
         setNodeScripts(
             n,
             getNodeScripts(n).filter((s) => s !== path)
@@ -778,11 +786,13 @@ function PhysicsProperties(
     props: Readonly<{
         node: () => Mesh | undefined
         scheduleAutoSave: () => void
+        pushUndoState: () => void
     }>
 ) {
     const updateMesh = (updater: (mesh: Mesh) => void) => {
         const mesh = props.node()
         if (!mesh) return
+        props.pushUndoState()
         updater(mesh)
         props.scheduleAutoSave()
     }
@@ -828,11 +838,13 @@ function MeshRenderingProperties(
     props: Readonly<{
         node: () => Mesh | undefined
         scheduleAutoSave: () => void
+        pushUndoState: () => void
     }>
 ) {
     const updateMesh = (updater: (mesh: Mesh) => void) => {
         const mesh = props.node()
         if (!mesh) return
+        props.pushUndoState()
         updater(mesh)
         props.scheduleAutoSave()
     }
@@ -920,11 +932,13 @@ function LightProperties(
     props: Readonly<{
         node: () => ShadowLight | undefined
         scheduleAutoSave: () => void
+        pushUndoState: () => void
     }>
 ) {
     const updateLight = (updater: (light: ShadowLight) => void) => {
         const light = props.node()
         if (!light) return
+        props.pushUndoState()
         updater(light)
         props.scheduleAutoSave()
     }
@@ -1040,11 +1054,13 @@ function CameraProperties(
     props: Readonly<{
         node: () => FreeCamera | undefined
         scheduleAutoSave: () => void
+        pushUndoState: () => void
     }>
 ) {
     const updateCamera = (updater: (camera: FreeCamera) => void) => {
         const camera = props.node()
         if (!camera) return
+        props.pushUndoState()
         updater(camera)
         props.scheduleAutoSave()
     }
@@ -1139,6 +1155,7 @@ export default function PropertiesPanel(
         scriptAssets: Accessor<string[]>
         imageAssets: Accessor<string[]>
         scheduleAutoSave: () => void
+        pushUndoState: () => void
     }>
 ) {
     const meshNode = () => props.node() as Mesh | undefined
@@ -1155,6 +1172,7 @@ export default function PropertiesPanel(
     const updateNodeName = (name: string) => {
         const node = props.node()
         if (!node) return
+        props.pushUndoState()
         node.name = name
         props.setNodeTick((tick) => tick + 1)
         props.scheduleAutoSave()
@@ -1189,6 +1207,7 @@ export default function PropertiesPanel(
                     <TransformProperties
                         node={transformNode}
                         scheduleAutoSave={props.scheduleAutoSave}
+                        pushUndoState={props.pushUndoState}
                     />
                 </Show>
                 <Show when={props.node()}>
@@ -1197,21 +1216,25 @@ export default function PropertiesPanel(
                         scriptAssets={props.scriptAssets}
                         setNodeTick={props.setNodeTick}
                         scheduleAutoSave={props.scheduleAutoSave}
+                        pushUndoState={props.pushUndoState}
                     />
                 </Show>
                 <Show when={props.node() instanceof Mesh}>
                     <PhysicsProperties
                         node={meshNode}
                         scheduleAutoSave={props.scheduleAutoSave}
+                        pushUndoState={props.pushUndoState}
                     />
                     <MeshRenderingProperties
                         node={meshNode}
                         scheduleAutoSave={props.scheduleAutoSave}
+                        pushUndoState={props.pushUndoState}
                     />
                     <MaterialProperties
                         node={meshNode}
                         imageAssets={props.imageAssets}
                         scheduleAutoSave={props.scheduleAutoSave}
+                        pushUndoState={props.pushUndoState}
                     />
                 </Show>
                 <Switch>
@@ -1219,12 +1242,14 @@ export default function PropertiesPanel(
                         <LightProperties
                             node={lightNode}
                             scheduleAutoSave={props.scheduleAutoSave}
+                            pushUndoState={props.pushUndoState}
                         />
                     </Match>
                     <Match when={props.node() instanceof Camera}>
                         <CameraProperties
                             node={cameraNode}
                             scheduleAutoSave={props.scheduleAutoSave}
+                            pushUndoState={props.pushUndoState}
                         />
                     </Match>
                 </Switch>

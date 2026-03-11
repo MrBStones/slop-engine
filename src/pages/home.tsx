@@ -78,12 +78,17 @@ export default function Home() {
                 lastSaved={state.lastSaved}
                 selectedGizmo={state.selectedGizmo}
                 onGizmoSelect={engine.setSelectedGizmo}
+                canUndo={engine.canUndo}
+                canRedo={engine.canRedo}
+                onUndo={() => void engine.undo()}
+                onRedo={() => void engine.redo()}
             />
             <EditorLayout
                 state={state}
                 scheduleAutoSave={engine.scheduleAutoSave}
                 handlePlayStop={engine.handlePlayStop}
                 onEngineResize={() => state.engine()?.resize()}
+                pushUndoState={engine.pushUndoState}
             />
         </section>
     )

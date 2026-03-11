@@ -1,4 +1,11 @@
-import { createEffect, onMount, onCleanup, untrack } from 'solid-js'
+import {
+    createEffect,
+    createMemo,
+    createSignal,
+    onMount,
+    onCleanup,
+    untrack,
+} from 'solid-js'
 import {
     Engine,
     Scene,
@@ -27,6 +34,8 @@ import { clearLogs } from '../scripting/consoleStore'
 import { getInitializedHavok } from '../utils/editorUtils'
 import type { EditorState, GizmoType } from './useEditorState'
 
+const MAX_UNDO_STEPS = 50
+
 export function useEditorEngine(state: EditorState) {
     const {
         scene,
@@ -53,6 +62,96 @@ export function useEditorEngine(state: EditorState) {
     const _physicsAggregates = new Map<Mesh, PhysicsAggregate>()
     let _sceneSnapshot: SceneSnapshot | null = null
     let _scriptRuntime: ScriptRuntime | null = null
+    let _physicsPlugin: HavokPlugin | null = null
+    const _undoStack: string[] = []
+    const _redoStack: string[] = []
+    const [undoRedoVersion, setUndoRedoVersion] = createSignal(0)
+
+    function pushUndoState() {
+        const s = scene()
+        if (!s || isPlaying()) return
+        try {
+            const json = serializeScene(s)
+            if (_undoStack.length >= MAX_UNDO_STEPS) _undoStack.shift()
+            _undoStack.push(json)
+            _redoStack.length = 0
+            setUndoRedoVersion((v) => v + 1)
+        } catch {
+            // ignore serialization errors
+        }
+    }
+
+    async function replaceSceneFromJson(json: string) {
+        const eng = engine()
+        const plugin = _physicsPlugin
+        if (!eng || !plugin) return
+        const oldScene = scene()
+        if (!oldScene) return
+        try {
+            const result = await loadSceneFromJson(eng, json, plugin)
+            const newScene = result.scene
+            await rehydrateTextures(newScene)
+            const canvas = document.getElementById('canvas') as HTMLCanvasElement
+            setupEditorCamera(newScene, canvas)
+            const utilityLayer = new UtilityLayerRenderer(newScene)
+            const gm = new GizmoManager(newScene, undefined, utilityLayer)
+            gm.positionGizmoEnabled = false
+            gm.rotationGizmoEnabled = false
+            gm.scaleGizmoEnabled = false
+            gm.enableAutoPicking = false
+            gm.boundingBoxGizmoEnabled = false
+            newScene.onBeforeRenderObservable.add(() => {
+                if (_isDraggingGizmo) setNodeTick((t) => t + 1)
+            })
+            newScene.onNewMeshAddedObservable.add(() => scheduleAutoSave())
+            newScene.onMeshRemovedObservable.add(() => scheduleAutoSave())
+            newScene.onNewLightAddedObservable.add(() => scheduleAutoSave())
+            newScene.onLightRemovedObservable.add(() => scheduleAutoSave())
+            newScene.onNewTransformNodeAddedObservable.add(() =>
+                scheduleAutoSave()
+            )
+            newScene.onTransformNodeRemovedObservable.add(() =>
+                scheduleAutoSave()
+            )
+            oldScene.dispose()
+            setScene(newScene)
+            setSceneJson(serializeScene(newScene))
+            setSelectedNode(undefined)
+            setNodeTick((t) => t + 1)
+            setGizmoManager(gm)
+            setLastSaved(new Date())
+            setIsDirty(true)
+        } catch (err) {
+            console.error('Failed to restore scene:', err)
+        }
+    }
+
+    async function undo() {
+        if (_undoStack.length === 0 || isPlaying()) return
+        const json = _undoStack.pop()!
+        const currentJson = serializeScene(scene()!)
+        if (_redoStack.length >= MAX_UNDO_STEPS) _redoStack.shift()
+        _redoStack.push(currentJson)
+        setUndoRedoVersion((v) => v + 1)
+        await replaceSceneFromJson(json)
+    }
+
+    async function redo() {
+        if (_redoStack.length === 0 || isPlaying()) return
+        const json = _redoStack.pop()!
+        const currentJson = serializeScene(scene()!)
+        if (_undoStack.length >= MAX_UNDO_STEPS) _undoStack.shift()
+        _undoStack.push(currentJson)
+        setUndoRedoVersion((v) => v + 1)
+        await replaceSceneFromJson(json)
+    }
+
+    const canUndo = createMemo(
+        () => (undoRedoVersion(), _undoStack.length > 0 && !isPlaying())
+    )
+    const canRedo = createMemo(
+        () => (undoRedoVersion(), _redoStack.length > 0 && !isPlaying())
+    )
 
     function performSave(s: Scene) {
         try {
@@ -89,6 +188,7 @@ export function useEditorEngine(state: EditorState) {
                 const gizmo = g as any
                 gizmo.onDragStartObservable?.add(() => {
                     _isDraggingGizmo = true
+                    pushUndoState()
                 })
                 gizmo.onDragEndObservable?.add(() => {
                     _isDraggingGizmo = false
@@ -156,6 +256,7 @@ export function useEditorEngine(state: EditorState) {
         const eng = new Engine(canvas, true)
         const initializedHavok = await getInitializedHavok()
         const physicsPlugin = new HavokPlugin(true, initializedHavok)
+        _physicsPlugin = physicsPlugin
 
         let sceneInstance: Scene
         const savedJson = sceneJson()
@@ -209,7 +310,9 @@ export function useEditorEngine(state: EditorState) {
         canvas.addEventListener('pointerup', (e) => {
             if (isPlaying()) return
             if (!hasDragged && pointerDownPos) {
-                const result = sceneInstance.pick(
+                const s = scene()
+                if (!s) return
+                const result = s.pick(
                     e.offsetX,
                     e.offsetY,
                     (node) => node instanceof Mesh
@@ -242,14 +345,34 @@ export function useEditorEngine(state: EditorState) {
 
         const periodicInterval = setInterval(() => {
             if (isPlaying()) return
-            performSave(sceneInstance)
+            const s = scene()
+            if (s) performSave(s)
         }, 30_000)
         onCleanup(() => clearInterval(periodicInterval))
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (isPlaying()) return
+            if (e.ctrlKey || e.metaKey) {
+                if (e.key === 'z') {
+                    e.preventDefault()
+                    if (e.shiftKey) {
+                        void redo()
+                    } else {
+                        void undo()
+                    }
+                } else if (e.key === 'y') {
+                    e.preventDefault()
+                    void redo()
+                }
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        onCleanup(() => window.removeEventListener('keydown', handleKeyDown))
 
         setLastSaved(new Date())
         setScene(sceneInstance)
         setEngine(eng)
-        eng.runRenderLoop(() => sceneInstance.render())
+        eng.runRenderLoop(() => scene()?.render())
 
         const resizeObserver = new ResizeObserver(() => {
             eng.resize()
@@ -342,5 +465,10 @@ export function useEditorEngine(state: EditorState) {
         performSave,
         handlePlayStop,
         setSelectedGizmo,
+        undo,
+        redo,
+        pushUndoState,
+        canUndo,
+        canRedo,
     }
 }

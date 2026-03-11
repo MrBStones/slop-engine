@@ -96,6 +96,7 @@ export default function ScenePanel(
         setSelectedNode: (node: Node | undefined) => void
         nodeTick: Accessor<number>
         setNodeTick: Setter<number>
+        pushUndoState: () => void
     }>
 ) {
     const [search, setSearch] = createSignal('')
@@ -121,6 +122,7 @@ export default function ScenePanel(
     function addMesh(type: string) {
         const scene = props.scene()
         if (!scene) return
+        props.pushUndoState()
         const mesh = addMeshToScene(scene, { type })
         props.setSelectedNode(mesh)
         props.setNodeTick((t) => t + 1)
@@ -130,6 +132,7 @@ export default function ScenePanel(
     function addLight(type: string) {
         const scene = props.scene()
         if (!scene) return
+        props.pushUndoState()
         const light = addLightToScene(scene, { type })
         props.setSelectedNode(light)
         props.setNodeTick((t) => t + 1)
@@ -139,6 +142,7 @@ export default function ScenePanel(
     function addTransformNode() {
         const scene = props.scene()
         if (!scene) return
+        props.pushUndoState()
         const node = addTransformNodeToScene(scene)
         props.setSelectedNode(node)
         props.setNodeTick((t) => t + 1)
@@ -148,6 +152,7 @@ export default function ScenePanel(
     function addEmptyNode() {
         const scene = props.scene()
         if (!scene) return
+        props.pushUndoState()
         const node = addEmptyNodeToScene(scene)
         props.setSelectedNode(node)
         props.setNodeTick((t) => t + 1)
@@ -157,6 +162,7 @@ export default function ScenePanel(
     function deleteNode(node: Node) {
         const scene = props.scene()
         if (!scene || node === scene.activeCamera) return
+        props.pushUndoState()
         if (props.selectedNode() === node) {
             props.setSelectedNode(undefined)
         }
@@ -167,6 +173,7 @@ export default function ScenePanel(
     function duplicateNode(node: Node) {
         const scene = props.scene()
         if (!scene) return
+        props.pushUndoState()
         const copyName = nextName(`${node.name}_copy`)
 
         if (node instanceof Mesh) {
@@ -380,6 +387,7 @@ export default function ScenePanel(
         const target = event.targetData
         const scene = props.scene()
         if (!source || !target || !scene) return
+        props.pushUndoState()
 
         const newParent = event.position === 'inside' ? target : target.parent
 
