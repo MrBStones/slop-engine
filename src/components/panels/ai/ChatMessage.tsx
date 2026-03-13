@@ -19,6 +19,7 @@ export function ChatMessage(
         props.parts.some(
             (p) =>
                 isToolPart(p) ||
+                p.type === 'file' ||
                 (p.type === 'text' && (p.text?.length ?? 0) > 0)
         )
 
@@ -55,7 +56,16 @@ export function ChatMessage(
                         {(seg) =>
                             seg.kind === 'tool' ? (
                                 <ToolCallIndicator part={seg.part} />
-                            ) : (
+                            ) : seg.kind === 'file' &&
+                              seg.part.mediaType?.startsWith('image/') ? (
+                                <div class="mt-1.5">
+                                    <img
+                                        src={seg.part.url}
+                                        alt={seg.part.filename ?? 'image'}
+                                        class="max-w-full max-h-48 rounded object-contain"
+                                    />
+                                </div>
+                            ) : seg.kind === 'text' ? (
                                 <For each={parseContent(seg.text)}>
                                     {(part) =>
                                         part.kind === 'code' ? (
@@ -71,7 +81,7 @@ export function ChatMessage(
                                         )
                                     }
                                 </For>
-                            )
+                            ) : null
                         }
                     </For>
                     <Show when={props.onUndo}>

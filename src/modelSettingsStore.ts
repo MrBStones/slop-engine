@@ -11,19 +11,19 @@ export interface ModelSettings {
 }
 
 const DEFAULT_MODELS: Record<AgentType, string> = {
-    orchestrator: 'gpt-5.2-chat',
-    scene: 'gpt-5.2-chat',
-    script: 'gpt-5.2-chat',
-    ui: 'gpt-5.2-chat',
-    asset: 'gpt-5.2-chat',
+    orchestrator: 'gpt-5.3-chat',
+    scene: 'gpt-5.3-chat',
+    script: 'gpt-5.3-chat',
+    ui: 'gpt-5.3-chat',
+    asset: 'gpt-5.3-chat',
 }
 
 const DEFAULT_OPENROUTER_MODELS: Record<AgentType, string> = {
-    orchestrator: 'anthropic/claude-3.6-sonnet',
+    orchestrator: 'anthropic/claude-4.6-sonnet',
     scene: 'google/gemini-3.1-pro-preview',
-    script: 'anthropic/claude-3.6-sonnet',
+    script: 'anthropic/claude-4.6-sonnet',
     ui: 'google/gemini-3.1-pro-preview',
-    asset: 'openai/gpt-5.2-chat',
+    asset: 'openai/gpt-5.3-chat',
 }
 
 export const AGENT_LABELS: Record<AgentType, string> = {

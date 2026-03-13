@@ -205,6 +205,14 @@ import {
     type SubagentToolCall,
 } from './subagentStore'
 
+type ChatMessagePart = {
+    type: string
+    text?: string
+    url?: string
+    mediaType?: string
+    [key: string]: unknown
+}
+
 export interface ToolExecutorContext {
     scene: Accessor<Scene | undefined>
     selectedNode: Accessor<Node | undefined>
@@ -215,6 +223,8 @@ export interface ToolExecutorContext {
     requestPlay: () => Promise<void>
     requestStop: () => Promise<void>
     modelSettings: Accessor<ModelSettings>
+    /** Messages from the chat, used to forward images to subagents. */
+    messages?: Accessor<Array<{ role: string; parts?: ChatMessagePart[] }>>
 }
 
 const SCRIPT_EXT = ['.ts', '.tsx', '.js', '.jsx']
@@ -248,8 +258,15 @@ interface SubagentStep {
     error?: string
 }
 
+type SubagentUserContent =
+    | string
+    | Array<
+          | { type: 'text'; text: string }
+          | { type: 'image'; image: string; mediaType?: string }
+      >
+
 type SubagentMessage =
-    | { role: 'user'; content: string }
+    | { role: 'user'; content: SubagentUserContent }
     | {
           role: 'assistant'
           content: Array<
@@ -993,6 +1010,33 @@ export function createToolExecutor(
         return content
     }
 
+    const getRecentUserImages = (): Array<{
+        url: string
+        mediaType: string
+    }> => {
+        const msgs = ctx.messages?.()
+        if (!msgs) return []
+        for (let i = msgs.length - 1; i >= 0; i--) {
+            const msg = msgs[i]
+            if (msg.role !== 'user' || !msg.parts) continue
+            const images: Array<{ url: string; mediaType: string }> = []
+            for (const p of msg.parts) {
+                if (
+                    p.type === 'file' &&
+                    p.mediaType?.startsWith('image/') &&
+                    p.url
+                ) {
+                    images.push({
+                        url: p.url,
+                        mediaType: p.mediaType,
+                    })
+                }
+            }
+            if (images.length > 0) return images
+        }
+        return []
+    }
+
     const executeSpawnAgent = async (
         args: {
             agentType: 'scene' | 'script' | 'ui' | 'asset'
@@ -1001,9 +1045,22 @@ export function createToolExecutor(
         },
         toolCallId?: string
     ): Promise<string> => {
-        const userContent = args.context
+        const textContent = args.context
             ? `${args.task}\n\nContext:\n${args.context}`
             : args.task
+
+        const recentImages = getRecentUserImages()
+        const userContent: SubagentUserContent =
+            recentImages.length > 0
+                ? [
+                      { type: 'text', text: textContent },
+                      ...recentImages.map((img) => ({
+                          type: 'image' as const,
+                          image: img.url,
+                          mediaType: img.mediaType,
+                      })),
+                  ]
+                : textContent
 
         const messages: SubagentMessage[] = [
             { role: 'user', content: userContent },
@@ -1012,8 +1069,26 @@ export function createToolExecutor(
         const actionsLog: string[] = []
         let finalText = ''
 
+        const userTextForDisplay =
+            typeof userContent === 'string'
+                ? userContent
+                : userContent
+                      .filter(
+                          (p): p is { type: 'text'; text: string } =>
+                              p.type === 'text'
+                      )
+                      .map((p) => p.text)
+                      .join('')
+
         const displayTurns: SubagentTurn[] = [
-            { role: 'user', text: userContent },
+            {
+                role: 'user',
+                text:
+                    userTextForDisplay +
+                    (recentImages.length > 0
+                        ? `\n\n[${recentImages.length} image(s) attached]`
+                        : ''),
+            },
         ]
         const emitState = (status: 'running' | 'done' | 'error') => {
             if (toolCallId) {

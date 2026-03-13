@@ -64,6 +64,34 @@ function toPx(value: string | number | undefined, fallback: string): string {
     return value
 }
 
+/**
+ * BabylonJS GUI uses left/top as offsets from the alignment anchor.
+ * With center alignment, 0 = centered. So left: '50%' + top: '50%' (intended
+ * as "center" in CSS terms) actually places the control in the bottom-right.
+ * Convert this common pattern to proper centering: left: 0, top: 0.
+ */
+function normalizePosition(
+    left: string | number | undefined,
+    top: string | number | undefined,
+    hAlign: 'left' | 'center' | 'right' | undefined,
+    vAlign: 'top' | 'center' | 'bottom' | undefined
+): { left: string; top: string } {
+    const wantCenter =
+        (hAlign === undefined || hAlign === 'center') &&
+        (vAlign === undefined || vAlign === 'center')
+    const leftStr = typeof left === 'string' ? left.trim() : ''
+    const topStr = typeof top === 'string' ? top.trim() : ''
+    const isCenterPattern = leftStr === '50%' && topStr === '50%'
+
+    if (wantCenter && isCenterPattern) {
+        return { left: '0px', top: '0px' }
+    }
+    return {
+        left: toPx(left, '0px'),
+        top: toPx(top, '0px'),
+    }
+}
+
 /** Handle returned by `createButton`. Use it to respond to clicks and update the button. */
 export class GuiButtonHandle {
     private readonly _button: Button
@@ -185,17 +213,27 @@ export class GUIManager {
         options?: GuiButtonOptions
     ): GuiButtonHandle {
         const btn = Button.CreateSimpleButton(name, text)
+        const hAlign =
+            options?.horizontalAlignment ??
+            (options?.left !== undefined ? 'left' : 'center')
+        const vAlign =
+            options?.verticalAlignment ??
+            (options?.top !== undefined ? 'top' : 'center')
+        const pos = normalizePosition(
+            options?.left,
+            options?.top,
+            hAlign,
+            vAlign
+        )
 
         btn.width = toPx(options?.width, '200px')
         btn.height = toPx(options?.height, '40px')
-        btn.left = toPx(options?.left, '0px')
-        btn.top = toPx(options?.top, '0px')
+        btn.left = pos.left
+        btn.top = pos.top
         btn.background = options?.color ?? '#2a6496'
         btn.cornerRadius = options?.cornerRadius ?? 4
-        btn.horizontalAlignment =
-            H_ALIGN_MAP[options?.horizontalAlignment ?? 'center']
-        btn.verticalAlignment =
-            V_ALIGN_MAP[options?.verticalAlignment ?? 'center']
+        btn.horizontalAlignment = H_ALIGN_MAP[hAlign]
+        btn.verticalAlignment = V_ALIGN_MAP[vAlign]
 
         if (btn.textBlock) {
             btn.textBlock.color = options?.textColor ?? 'white'
@@ -236,20 +274,44 @@ export class GUIManager {
         options?: GuiLabelOptions
     ): GuiLabelHandle {
         const label = new TextBlock(name, text)
+        const hAlign =
+            options?.horizontalAlignment ??
+            (options?.left !== undefined ? 'left' : 'center')
+        const vAlign =
+            options?.verticalAlignment ??
+            (options?.top !== undefined ? 'top' : 'center')
+        const pos = normalizePosition(
+            options?.left,
+            options?.top,
+            hAlign,
+            vAlign
+        )
 
+        const hasExplicitWidth = options?.width !== undefined
+        const hasExplicitHeight = options?.height !== undefined
         label.width = toPx(options?.width, '200px')
         label.height = toPx(options?.height, '40px')
-        label.left = toPx(options?.left, '0px')
-        label.top = toPx(options?.top, '0px')
+        label.left = pos.left
+        label.top = pos.top
         label.color = options?.color ?? 'white'
         label.fontSize = options?.fontSize ?? 16
-        label.textWrapping = options?.wordWrap ?? true
-        label.horizontalAlignment =
-            H_ALIGN_MAP[options?.horizontalAlignment ?? 'center']
-        label.verticalAlignment =
-            V_ALIGN_MAP[options?.verticalAlignment ?? 'center']
+        label.textWrapping = hasExplicitWidth ? (options?.wordWrap ?? true) : false
+        label.horizontalAlignment = H_ALIGN_MAP[hAlign]
+        label.verticalAlignment = V_ALIGN_MAP[vAlign]
+        if (!hasExplicitWidth && !hasExplicitHeight) {
+            label.resizeToFit = true
+        }
 
-        switch (options?.textAlignment) {
+        const textHAlign =
+            options?.textAlignment ??
+            (hAlign === 'left' ? 'left' : hAlign === 'right' ? 'right' : 'center')
+        const textVAlign =
+            vAlign === 'top'
+                ? Control.VERTICAL_ALIGNMENT_TOP
+                : vAlign === 'bottom'
+                  ? Control.VERTICAL_ALIGNMENT_BOTTOM
+                  : Control.VERTICAL_ALIGNMENT_CENTER
+        switch (textHAlign) {
             case 'left':
                 label.textHorizontalAlignment =
                     Control.HORIZONTAL_ALIGNMENT_LEFT
@@ -263,6 +325,7 @@ export class GUIManager {
                     Control.HORIZONTAL_ALIGNMENT_CENTER
                 break
         }
+        label.textVerticalAlignment = textVAlign
 
         this._texture.addControl(label)
         this._controls.push(label)

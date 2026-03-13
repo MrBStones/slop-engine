@@ -76,8 +76,7 @@ function getModel(
     agentType: 'orchestrator' | 'scene' | 'script' | 'ui' | 'asset',
     envDefault: string
 ) {
-    const modelId =
-        settings?.models?.[agentType]?.trim() || envDefault
+    const modelId = settings?.models?.[agentType]?.trim() || envDefault
     if (settings?.provider === 'openrouter') {
         return openrouter.chat(modelId)
     }
@@ -386,7 +385,9 @@ export function chatApiPlugin(): Plugin {
                         req.on('end', () => resolve(data))
                     })
 
-                    const { messages, agentType, modelSettings } = JSON.parse(body) as {
+                    const { messages, agentType, modelSettings } = JSON.parse(
+                        body
+                    ) as {
                         messages: SubagentMessage[]
                         agentType: 'scene' | 'script' | 'ui' | 'asset'
                         modelSettings?: ModelSettings

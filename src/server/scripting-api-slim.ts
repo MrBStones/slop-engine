@@ -78,8 +78,8 @@ declare class GUI {
     createButton(name: string, text: string, options?: object): GuiButtonHandle
     createLabel(name: string, text: string, options?: object): GuiLabelHandle
 }
-declare class GuiButtonHandle { onClick(cb: () => void): this; setText(t: string): this; remove(): void }
-declare class GuiLabelHandle { setText(t: string): this; remove(): void }
+declare class GuiButtonHandle { onClick(cb: () => void): this; setText(t: string): this; setVisible(v: boolean): this; setColor(c: string): this; remove(): void }
+declare class GuiLabelHandle { setText(t: string): this; setVisible(v: boolean): this; setColor(c: string): this; remove(): void }
 
 // Spawn options
 interface SpawnOptions {

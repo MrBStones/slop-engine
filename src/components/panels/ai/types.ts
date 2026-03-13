@@ -23,6 +23,14 @@ export type ContentPart =
     | { kind: 'html'; html: string }
     | { kind: 'code'; lang: string; code: string }
 
+export interface FileUIPart {
+    type: 'file'
+    mediaType: string
+    url: string
+    filename?: string
+}
+
 export type MessageSegment =
     | { kind: 'text'; text: string }
     | { kind: 'tool'; part: ToolUIPart }
+    | { kind: 'file'; part: FileUIPart }

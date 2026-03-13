@@ -59,12 +59,15 @@ export default function AIPanel(
     }>
 ) {
     const [input, setInput] = createSignal('')
+    const [pendingFiles, setPendingFiles] = createSignal<FileList | undefined>(
+        undefined
+    )
+    let fileInputRef: HTMLInputElement | undefined
     type AIPanelView = 'chat' | 'history' | 'settings'
     const [view, setView] = createSignal<AIPanelView>('chat')
     const [sessions, setSessions] = createSignal<ChatSession[]>([])
-    const recentAutoSendKeys: string[] = []
+    const toolErrorCounts = new Map<string, number>()
     let roundTripCount = 0
-    const consecutiveErrorCounts = new Map<string, number>()
     const [activeChatId, setActiveChatId] = makePersisted(
         createSignal(generateChatId()),
         { name: 'slop-ai-active-chat' }
@@ -80,18 +83,6 @@ export default function AIPanel(
 
     let scrollContainer: HTMLDivElement | undefined
     let inputRef: HTMLTextAreaElement | undefined
-
-    const executeTool = createToolExecutor({
-        scene: props.scene,
-        selectedNode: props.selectedNode,
-        setSelectedNode: props.setSelectedNode,
-        setNodeTick: props.setNodeTick,
-        pushUndoState: props.pushUndoState,
-        isPlaying: props.isPlaying,
-        requestPlay: props.requestPlay,
-        requestStop: props.requestStop,
-        modelSettings,
-    })
 
     const chat = useChat({
         transport: new DefaultChatTransport({
@@ -123,70 +114,50 @@ export default function AIPanel(
             const toolParts = parts.filter((p) =>
                 p.type.startsWith('tool-')
             ) as unknown as ToolUIPart[]
+            // No tool calls = model is done naturally
             if (toolParts.length === 0) return false
 
+            // Wait for all tools to finish executing
             const allResolved = toolParts.every(
                 (t) =>
                     t.state === 'output-available' || t.state === 'output-error'
             )
             if (!allResolved) return false
 
-            const lastToolIdx = parts.reduce(
-                (max, p, i) => (p.type.startsWith('tool-') ? i : max),
-                -1
-            )
-            const hasTextAfterTools = parts
-                .slice(lastToolIdx + 1)
-                .some((p) => p.type === 'text' && (p.text?.length ?? 0) > 0)
-
-            if (hasTextAfterTools) return false
-
-            const toolKey = toolParts
-                .map((t) => {
-                    const name = getToolNameFromPart(t)
-                    return `${name}:${JSON.stringify(t.input ?? {})}`
-                })
-                .sort((a, b) => a.localeCompare(b))
-                .join('|')
-
-            const hasAnyText = parts.some(
-                (p) => p.type === 'text' && (p.text?.trim().length ?? 0) > 0
-            )
-            if (hasAnyText && recentAutoSendKeys.includes(toolKey)) return false
-
-            if (
-                recentAutoSendKeys.length > 0 &&
-                recentAutoSendKeys.at(-1) === toolKey
-            )
-                return false
-
-            const repeatCount = recentAutoSendKeys.filter(
-                (k) => k === toolKey
-            ).length
-            if (repeatCount >= 2) return false
-
+            // Don't retry the same tool if it keeps erroring
             for (const t of toolParts) {
                 const name = getToolNameFromPart(t)
                 const inp = t.input as Record<string, unknown> | undefined
                 const errorKey = `${name}:${(inp?.path as string) ?? ''}`
                 if (t.state === 'output-error') {
                     const count =
-                        (consecutiveErrorCounts.get(errorKey) ?? 0) + 1
-                    consecutiveErrorCounts.set(errorKey, count)
+                        (toolErrorCounts.get(errorKey) ?? 0) + 1
+                    toolErrorCounts.set(errorKey, count)
                     if (count >= MAX_CONSECUTIVE_ERRORS) return false
                 } else {
-                    consecutiveErrorCounts.set(errorKey, 0)
+                    toolErrorCounts.set(errorKey, 0)
                 }
             }
 
+            // Hard cap on round trips per user message
             if (roundTripCount >= MAX_ROUND_TRIPS) return false
             roundTripCount++
 
-            recentAutoSendKeys.push(toolKey)
-            if (recentAutoSendKeys.length > 8) recentAutoSendKeys.shift()
-
             return true
         },
+    })
+
+    const executeTool = createToolExecutor({
+        scene: props.scene,
+        selectedNode: props.selectedNode,
+        setSelectedNode: props.setSelectedNode,
+        setNodeTick: props.setNodeTick,
+        pushUndoState: props.pushUndoState,
+        isPlaying: props.isPlaying,
+        requestPlay: props.requestPlay,
+        requestStop: props.requestStop,
+        modelSettings,
+        messages: () => chat.messages,
     })
 
     const refreshSessions = async () => {
@@ -398,8 +369,7 @@ export default function AIPanel(
         checkpoints.clear()
         setCheckpointTick((t) => t + 1)
         roundTripCount = 0
-        recentAutoSendKeys.length = 0
-        consecutiveErrorCounts.clear()
+        toolErrorCounts.clear()
         setView('chat')
         setShouldAutoScroll(true)
         requestAnimationFrame(() => scrollToBottom())
@@ -449,7 +419,8 @@ export default function AIPanel(
     const handleSubmit = async (e: Event) => {
         e.preventDefault()
         const content = input().trim()
-        if (!content || isWorking()) return
+        const files = pendingFiles()
+        if ((!content && !files?.length) || isWorking()) return
 
         // Capture scene checkpoint before AI starts working
         const checkpoint = await props.captureCheckpoint()
@@ -460,12 +431,19 @@ export default function AIPanel(
         }
 
         setInput('')
+        setPendingFiles(undefined)
+        if (fileInputRef) fileInputRef.value = ''
         setShouldAutoScroll(true)
         requestAnimationFrame(() => scrollToBottom())
         roundTripCount = 0
-        recentAutoSendKeys.length = 0
-        consecutiveErrorCounts.clear()
-        await chat.sendMessage({ text: content })
+        toolErrorCounts.clear()
+        if (files?.length) {
+            await chat.sendMessage(
+                content ? { text: content, files } : { files }
+            )
+        } else {
+            await chat.sendMessage({ text: content })
+        }
     }
 
     const handleUndoCheckpoint = async (userMsgIndex: number) => {
@@ -753,6 +731,40 @@ export default function AIPanel(
                         data-disabled={isWorking()}
                     >
                         <div class="flex items-end gap-2 px-3 pt-3">
+                            <input
+                                ref={(el) => {
+                                    fileInputRef = el
+                                }}
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                class="hidden"
+                                onChange={(e) => {
+                                    const el = e.currentTarget
+                                    setPendingFiles(el.files ?? undefined)
+                                }}
+                            />
+                            <button
+                                type="button"
+                                class="mb-1 p-2 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-700/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                onClick={() => fileInputRef?.click()}
+                                disabled={isWorking()}
+                                title="Attach image"
+                            >
+                                <svg
+                                    class="w-4 h-4"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                                    />
+                                </svg>
+                            </button>
                             <textarea
                                 ref={inputRef}
                                 class="
@@ -791,7 +803,10 @@ export default function AIPanel(
                                         bg-blue-500 text-white hover:bg-blue-400
                                     "
                                     type="submit"
-                                    disabled={!input().trim()}
+                                    disabled={
+                                        !input().trim() &&
+                                        !pendingFiles()?.length
+                                    }
                                 >
                                     <span>Send</span>
                                     <svg
@@ -811,8 +826,15 @@ export default function AIPanel(
                             </Show>
                         </div>
                         <div class="flex items-center justify-between px-3 pb-2 pt-1 text-[11px] text-gray-500">
-                            <span>
+                            <span class="flex items-center gap-2">
                                 Enter sends. Shift+Enter adds a new line.
+                                <Show when={pendingFiles()?.length}>
+                                    <span class="text-blue-400">
+                                        {pendingFiles()!.length} image
+                                        {pendingFiles()!.length === 1 ? '' : 's'}
+                                        attached
+                                    </span>
+                                </Show>
                             </span>
                             <span class="text-gray-400/80">
                                 {isWorking() ? 'AI is responding…' : 'Ready'}

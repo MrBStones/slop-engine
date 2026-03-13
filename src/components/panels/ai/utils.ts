@@ -1,5 +1,10 @@
 import { marked, type Token, type Tokens, type TokensList } from 'marked'
-import type { ContentPart, MessageSegment, ToolUIPart } from './types'
+import type {
+    ContentPart,
+    MessageSegment,
+    ToolUIPart,
+    FileUIPart,
+} from './types'
 
 marked.setOptions({ breaks: true, gfm: true })
 
@@ -50,6 +55,10 @@ export function parseContent(raw: string): ContentPart[] {
     return result
 }
 
+function isFilePart(part: { type: string }): part is FileUIPart {
+    return part.type === 'file'
+}
+
 /** Group parts into ordered segments preserving their original position */
 export function groupPartsInOrder(
     parts: Array<{ type: string; text?: string; [key: string]: unknown }>,
@@ -69,6 +78,9 @@ export function groupPartsInOrder(
         if (isToolPart(part)) {
             flushText()
             segments.push({ kind: 'tool', part: part as unknown as ToolUIPart })
+        } else if (isFilePart(part)) {
+            flushText()
+            segments.push({ kind: 'file', part: part as FileUIPart })
         } else if (part.type === 'text' && part.text) {
             pendingText += part.text
         }
