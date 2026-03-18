@@ -235,6 +235,7 @@ const PREFAB_EXT = '.prefab.json'
 const MAX_AGENT_STEPS = 20
 const MAX_AUTONOMOUS_TEST_STEPS = 100
 const MAX_AUTONOMOUS_TEST_SECONDS = 30
+const MAX_SUBAGENT_STEP_MS = 45000
 
 type AutonomousInputStep =
     | { action: 'key_down'; key: string }
@@ -1668,102 +1669,134 @@ export function createToolExecutor(
         }
         emitState('running')
 
-        for (let step = 0; step < MAX_AGENT_STEPS; step++) {
-            const res = await fetch('/api/subagent', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    messages,
-                    agentType: args.agentType,
-                    modelSettings: ctx.modelSettings(),
-                }),
-            })
+        try {
+            for (let step = 0; step < MAX_AGENT_STEPS; step++) {
+                const controller = new AbortController()
+                const timeout = setTimeout(() => {
+                    controller.abort()
+                }, MAX_SUBAGENT_STEP_MS)
 
-            if (!res.ok) {
-                const err = (await res.json().catch(() => ({}))) as {
-                    error?: string
-                }
-                emitState('error')
-                throw new Error(
-                    err.error ?? `Subagent request failed (${res.status})`
-                )
-            }
-
-            const data = (await res.json()) as SubagentStep
-
-            const assistantContent: Extract<
-                SubagentMessage,
-                { role: 'assistant' }
-            >['content'] = []
-            if (data.text) {
-                assistantContent.push({ type: 'text', text: data.text })
-                finalText = data.text
-            }
-            for (const tc of data.toolCalls) {
-                assistantContent.push({
-                    type: 'tool-call',
-                    toolCallId: tc.toolCallId,
-                    toolName: tc.toolName,
-                    input: tc.args,
-                })
-            }
-            if (assistantContent.length > 0) {
-                messages.push({ role: 'assistant', content: assistantContent })
-            }
-
-            const displayToolCalls: SubagentToolCall[] = data.toolCalls.map(
-                (tc) => ({
-                    name: tc.toolName,
-                    args: (tc.args as Record<string, unknown>) ?? {},
-                    status: 'pending' as const,
-                })
-            )
-            const assistantTurn: SubagentTurn = {
-                role: 'assistant',
-                text: data.text || '',
-                toolCalls:
-                    displayToolCalls.length > 0 ? displayToolCalls : undefined,
-            }
-            displayTurns.push(assistantTurn)
-            emitState('running')
-
-            if (data.toolCalls.length === 0) break
-
-            const toolResults: Extract<
-                SubagentMessage,
-                { role: 'tool' }
-            >['content'] = []
-            for (let i = 0; i < data.toolCalls.length; i++) {
-                const tc = data.toolCalls[i]
-                let result: string
+                let res: Response
                 try {
-                    result = await executeTool(tc.toolName, tc.args)
-                    actionsLog.push(`${tc.toolName}: ${result}`)
-                    displayToolCalls[i].status = 'done'
-                    displayToolCalls[i].result = result
-                } catch (err) {
-                    result = `Error: ${
-                        err instanceof Error ? err.message : String(err)
-                    }`
-                    actionsLog.push(`${tc.toolName} FAILED: ${result}`)
-                    displayToolCalls[i].status = 'error'
-                    displayToolCalls[i].error =
-                        err instanceof Error ? err.message : String(err)
+                    res = await fetch('/api/subagent', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            messages,
+                            agentType: args.agentType,
+                            modelSettings: ctx.modelSettings(),
+                        }),
+                        signal: controller.signal,
+                    })
+                } catch (error) {
+                    if (
+                        error instanceof DOMException &&
+                        error.name === 'AbortError'
+                    ) {
+                        throw new Error(
+                            `Subagent step timed out after ${Math.round(
+                                MAX_SUBAGENT_STEP_MS / 1000
+                            )}s`
+                        )
+                    }
+                    throw error
+                } finally {
+                    clearTimeout(timeout)
                 }
+
+                if (!res.ok) {
+                    const err = (await res.json().catch(() => ({}))) as {
+                        error?: string
+                    }
+                    throw new Error(
+                        err.error ?? `Subagent request failed (${res.status})`
+                    )
+                }
+
+                const data = (await res.json()) as SubagentStep
+
+                const assistantContent: Extract<
+                    SubagentMessage,
+                    { role: 'assistant' }
+                >['content'] = []
+                if (data.text) {
+                    assistantContent.push({ type: 'text', text: data.text })
+                    finalText = data.text
+                }
+                for (const tc of data.toolCalls) {
+                    assistantContent.push({
+                        type: 'tool-call',
+                        toolCallId: tc.toolCallId,
+                        toolName: tc.toolName,
+                        input: tc.args,
+                    })
+                }
+                if (assistantContent.length > 0) {
+                    messages.push({
+                        role: 'assistant',
+                        content: assistantContent,
+                    })
+                }
+
+                const displayToolCalls: SubagentToolCall[] = data.toolCalls.map(
+                    (tc) => ({
+                        name: tc.toolName,
+                        args: (tc.args as Record<string, unknown>) ?? {},
+                        status: 'pending' as const,
+                    })
+                )
+                const assistantTurn: SubagentTurn = {
+                    role: 'assistant',
+                    text: data.text || '',
+                    toolCalls:
+                        displayToolCalls.length > 0
+                            ? displayToolCalls
+                            : undefined,
+                }
+                displayTurns.push(assistantTurn)
                 emitState('running')
-                toolResults.push({
-                    type: 'tool-result',
-                    toolCallId: tc.toolCallId,
-                    toolName: tc.toolName,
-                    output: { type: 'text', value: result },
-                })
+
+                if (data.toolCalls.length === 0) break
+
+                const toolResults: Extract<
+                    SubagentMessage,
+                    { role: 'tool' }
+                >['content'] = []
+                for (let i = 0; i < data.toolCalls.length; i++) {
+                    const tc = data.toolCalls[i]
+                    let result: string
+                    try {
+                        result = await executeTool(tc.toolName, tc.args)
+                        actionsLog.push(`${tc.toolName}: ${result}`)
+                        displayToolCalls[i].status = 'done'
+                        displayToolCalls[i].result = result
+                    } catch (err) {
+                        result = `Error: ${
+                            err instanceof Error ? err.message : String(err)
+                        }`
+                        actionsLog.push(`${tc.toolName} FAILED: ${result}`)
+                        displayToolCalls[i].status = 'error'
+                        displayToolCalls[i].error =
+                            err instanceof Error ? err.message : String(err)
+                    }
+                    emitState('running')
+                    toolResults.push({
+                        type: 'tool-result',
+                        toolCallId: tc.toolCallId,
+                        toolName: tc.toolName,
+                        output: { type: 'text', value: result },
+                    })
+                }
+                messages.push({ role: 'tool', content: toolResults })
+
+                if (data.finishReason === 'stop') break
             }
-            messages.push({ role: 'tool', content: toolResults })
 
-            if (data.finishReason === 'stop') break
+            emitState('done')
+        } catch (error) {
+            emitState('error')
+            throw error
         }
-
-        emitState('done')
 
         const lines: string[] = []
         if (finalText) lines.push(finalText)

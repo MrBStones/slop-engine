@@ -68,6 +68,7 @@ export default function AIPanel(
     const [sessions, setSessions] = createSignal<ChatSession[]>([])
     const toolErrorCounts = new Map<string, number>()
     let roundTripCount = 0
+    const processedToolCallIds = new Set<string>()
     const [activeChatId, setActiveChatId] = makePersisted(createSignal(''), {
         name: 'slop-ai-active-chat',
     })
@@ -116,20 +117,27 @@ export default function AIPanel(
             const toolParts = parts.filter((p) =>
                 p.type.startsWith('tool-')
             ) as unknown as ToolUIPart[]
-            // No tool calls = model is done naturally
-            if (toolParts.length === 0) return false
 
-            // Wait for all tools to finish executing
-            const allResolved = toolParts.every(
+            // Only consider tool calls we haven't already sent for.
+            // The SDK reuses the same assistant message across round trips,
+            // so old resolved tool parts accumulate and would re-trigger
+            // sends forever without this filter.
+            const newToolParts = toolParts.filter(
+                (t) => !processedToolCallIds.has(t.toolCallId)
+            )
+            if (newToolParts.length === 0) return false
+
+            // Wait for all new tools to finish executing
+            const allResolved = newToolParts.every(
                 (t) =>
                     t.state === 'output-available' || t.state === 'output-error'
             )
             if (!allResolved) return false
 
             // Don't retry the same tool if it keeps erroring
-            for (const t of toolParts) {
+            for (const t of newToolParts) {
                 const name = getToolNameFromPart(t)
-                const inp = t.input as Record<string, unknown> | undefined
+                const inp = t.input
                 const errorKey = `${name}:${(inp?.path as string) ?? ''}`
                 if (t.state === 'output-error') {
                     const count = (toolErrorCounts.get(errorKey) ?? 0) + 1
@@ -144,6 +152,10 @@ export default function AIPanel(
             if (roundTripCount >= MAX_ROUND_TRIPS) return false
             roundTripCount++
 
+            // Mark these tool calls as processed
+            for (const t of newToolParts) {
+                processedToolCallIds.add(t.toolCallId)
+            }
             return true
         },
     })
@@ -396,6 +408,7 @@ export default function AIPanel(
         setCheckpointTick((t) => t + 1)
         roundTripCount = 0
         toolErrorCounts.clear()
+        processedToolCallIds.clear()
         setView('chat')
         setShouldAutoScroll(true)
         requestAnimationFrame(() => scrollToBottom())
@@ -493,6 +506,7 @@ export default function AIPanel(
         requestAnimationFrame(() => scrollToBottom())
         roundTripCount = 0
         toolErrorCounts.clear()
+        processedToolCallIds.clear()
         if (files?.length) {
             await chat.sendMessage(
                 content ? { text: content, files } : { files }
@@ -546,7 +560,7 @@ export default function AIPanel(
     })
 
     return (
-        <div class="flex flex-col h-full">
+        <div class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
             <div class="flex items-center justify-between px-2 pb-1 shrink-0 gap-1">
                 <span class="text-xs text-gray-400 font-medium truncate">
                     {view() === 'history'

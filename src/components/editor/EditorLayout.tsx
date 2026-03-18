@@ -60,8 +60,8 @@ export function EditorLayout(props: Readonly<EditorLayoutProps>) {
         >
             <Resizable.Panel
                 initialSize={0.2}
-                minSize={0.05}
-                class="bg-gray-800 p-2 rounded-md"
+                minSize={0.2}
+                class="bg-gray-800 p-2 rounded-md min-h-0 min-w-0 overflow-hidden flex flex-col"
             >
                 <AIPanel
                     scene={scene}
@@ -192,7 +192,7 @@ export function EditorLayout(props: Readonly<EditorLayoutProps>) {
                 <Resizable.Panel
                     initialSize={0.2}
                     minSize={0.15}
-                    class="size-full"
+                    class="size-full min-h-0 min-w-0"
                 >
                     <Resizable
                         orientation="vertical"
