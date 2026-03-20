@@ -4,18 +4,22 @@ import {
     createSignal,
     onMount,
     onCleanup,
-    untrack,
 } from 'solid-js'
 import {
     Engine,
     Scene,
     Mesh,
+    AbstractMesh,
     Color3,
+    Vector3,
+    Matrix,
+    Quaternion,
     GizmoManager,
     UtilityLayerRenderer,
     PhysicsAggregate,
     PhysicsShapeType,
     HavokPlugin,
+    TransformNode,
 } from 'babylonjs'
 
 import {
@@ -40,6 +44,12 @@ import {
     type AssetNode,
 } from '../assetStore'
 import type { EditorState, GizmoType } from './useEditorState'
+import {
+    EDITOR_GIZMO_PIVOT_NAME,
+    ensureEditorGizmoPivot,
+    isSlopEditorHelper,
+    worldAabbCenterForMeshes,
+} from '../utils/editorGizmoUtils'
 
 export interface Checkpoint {
     sceneJson: string
@@ -55,8 +65,10 @@ export function useEditorEngine(state: EditorState) {
         setScene,
         setEngine,
         setGizmoManager,
-        selectedNode,
+        selectedNodes,
         setSelectedNode,
+        toggleSelectedNode,
+        nodeTick,
         setNodeTick,
         sceneJson,
         setSceneJson,
@@ -71,7 +83,10 @@ export function useEditorEngine(state: EditorState) {
     } = state
 
     let _autoSaveTimer: ReturnType<typeof setTimeout> | null = null
-    let _isDraggingGizmo = false
+    let _multiPivotSession = false
+    let _multiPivotStartMatrix: Matrix | null = null
+    let _multiMeshStartMatrices: Matrix[] = []
+    let _multiGizmoFollowMeshes: Mesh[] = []
     const _physicsAggregates = new Map<Mesh, PhysicsAggregate>()
     let _sceneSnapshot: SceneSnapshot | null = null
     let _scriptRuntime: ScriptRuntime | null = null
@@ -148,6 +163,47 @@ export function useEditorEngine(state: EditorState) {
         }, 2000)
     }
 
+    function endMultiPivotSession() {
+        if (!_multiPivotSession) return
+        _multiPivotSession = false
+        _multiPivotStartMatrix = null
+        _multiMeshStartMatrices = []
+        _multiGizmoFollowMeshes = []
+    }
+
+    function beginMultiPivotTransformSession(pivotMesh: AbstractMesh) {
+        _multiPivotSession = true
+        pushUndoState()
+        _multiGizmoFollowMeshes = selectedNodes().filter(
+            (n): n is Mesh => n instanceof Mesh
+        )
+        pivotMesh.computeWorldMatrix(true)
+        _multiPivotStartMatrix = pivotMesh.getWorldMatrix().clone()
+        _multiMeshStartMatrices = _multiGizmoFollowMeshes.map((m) => {
+            m.computeWorldMatrix(true)
+            return m.getWorldMatrix().clone()
+        })
+    }
+
+    /** Babylon: A.multiply(B) === B×A. We need newWorld = pivotNow × inv(pivotStart) × meshStart. */
+    function applyWorldMatrixToMesh(mesh: Mesh, world: Matrix) {
+        const parent = mesh.parent
+        let local = world
+        if (parent instanceof TransformNode) {
+            parent.computeWorldMatrix(true)
+            const invParentWorld = Matrix.Invert(parent.getWorldMatrix())
+            local = world.multiply(invParentWorld)
+        }
+        const scaling = Vector3.Zero()
+        const rot = new Quaternion()
+        const pos = Vector3.Zero()
+        if (!local.decompose(scaling, rot, pos)) return
+        mesh.scaling.copyFrom(scaling)
+        mesh.position.copyFrom(pos)
+        mesh.rotationQuaternion = rot
+        mesh.rotation = Vector3.Zero()
+    }
+
     function hookGizmoDrag() {
         const gm = gizmoManager()
         if (!gm) return
@@ -160,12 +216,28 @@ export function useEditorEngine(state: EditorState) {
             if (g && !(g as any).__dragHooked) {
                 ;(g as any).__dragHooked = true
                 const gizmo = g as any
+                const isPosition = g === gm.gizmos.positionGizmo
+                const isRotation = g === gm.gizmos.rotationGizmo
+                const isScale = g === gm.gizmos.scaleGizmo
+                const isPivotMultiTransform =
+                    isPosition || isRotation || isScale
                 gizmo.onDragStartObservable?.add(() => {
-                    _isDraggingGizmo = true
-                    pushUndoState()
+                    const attached = gm.attachedMesh
+                    if (
+                        isPivotMultiTransform &&
+                        attached?.name === EDITOR_GIZMO_PIVOT_NAME &&
+                        selectedNodes().filter((n) => n instanceof Mesh)
+                            .length >= 2
+                    ) {
+                        beginMultiPivotTransformSession(attached)
+                        return
+                    }
+                    if (attached?.name !== EDITOR_GIZMO_PIVOT_NAME) {
+                        pushUndoState()
+                    }
                 })
                 gizmo.onDragEndObservable?.add(() => {
-                    _isDraggingGizmo = false
+                    if (isPivotMultiTransform) endMultiPivotSession()
                     setNodeTick((t) => t + 1)
                     scheduleAutoSave()
                 })
@@ -173,18 +245,33 @@ export function useEditorEngine(state: EditorState) {
         }
     }
 
+    /** After render: pivot TRS updated by gizmo; map onto selection via rigid group matrix. */
+    function tickMultiPivotFromGizmo(s: Scene) {
+        if (
+            !_multiPivotSession ||
+            !_multiPivotStartMatrix ||
+            _multiGizmoFollowMeshes.length < 2
+        ) {
+            return
+        }
+        const pivot = s.getMeshByName(EDITOR_GIZMO_PIVOT_NAME)
+        if (!pivot) return
+        pivot.computeWorldMatrix(true)
+        const pivotNow = pivot.getWorldMatrix()
+        const pivotStartInv = Matrix.Invert(_multiPivotStartMatrix)
+        const delta = pivotStartInv.multiply(pivotNow)
+
+        for (let i = 0; i < _multiGizmoFollowMeshes.length; i++) {
+            const m = _multiGizmoFollowMeshes[i]
+            const meshStart = _multiMeshStartMatrices[i]
+            if (!meshStart) continue
+            const newWorld = meshStart.multiply(delta)
+            applyWorldMatrixToMesh(m, newWorld)
+        }
+    }
+
     const setSelectedGizmo = (gizmo: GizmoType) => {
         state.setSelectedGizmo(gizmo)
-        const gm = gizmoManager()
-        if (!gm) return
-        gm.positionGizmoEnabled = gizmo === 'position'
-        gm.rotationGizmoEnabled = gizmo === 'rotation'
-        gm.scaleGizmoEnabled = gizmo === 'scale'
-        gm.boundingBoxGizmoEnabled = gizmo === 'boundingBox'
-        gm.attachToMesh(
-            selectedNode() instanceof Mesh ? (selectedNode() as Mesh) : null
-        )
-        hookGizmoDrag()
     }
 
     createEffect(() => {
@@ -192,37 +279,105 @@ export function useEditorEngine(state: EditorState) {
         queueMicrotask(() => engine()?.resize())
     })
 
-    let _lastOutlinedMesh: Mesh | null = null
+    let _prevOutlinedMeshes: Mesh[] = []
+
     createEffect(() => {
-        const node = selectedNode()
-        const gm = gizmoManager()
-
-        if (_lastOutlinedMesh && _lastOutlinedMesh !== node) {
-            _lastOutlinedMesh.renderOutline = false
+        const meshCount = state
+            .selectedNodes()
+            .filter((n) => n instanceof Mesh).length
+        if (meshCount > 1 && state.selectedGizmo() === 'boundingBox') {
+            state.setSelectedGizmo('position')
         }
-        _lastOutlinedMesh = null
+    })
 
-        if (node instanceof Mesh) {
-            node.renderOutline = true
-            node.outlineColor = new Color3(0, 0, 0)
-            node.outlineWidth = 0.05
-            _lastOutlinedMesh = node
+    createEffect(() => {
+        const nodes = selectedNodes()
+        const gm = gizmoManager()
+        const playing = isPlaying()
+        const s = scene()
+        const gizmoType = selectedGizmo()
 
-            if (gm) {
-                const gizmo = untrack(selectedGizmo)
-                gm.positionGizmoEnabled = gizmo === 'position'
-                gm.rotationGizmoEnabled = gizmo === 'rotation'
-                gm.scaleGizmoEnabled = gizmo === 'scale'
-                gm.boundingBoxGizmoEnabled = gizmo === 'boundingBox'
-                gm.attachToMesh(node)
-                hookGizmoDrag()
+        for (const m of _prevOutlinedMeshes) {
+            if (!nodes.includes(m)) {
+                m.renderOutline = false
             }
-        } else if (gm) {
+        }
+        _prevOutlinedMeshes = []
+
+        if (playing) {
+            if (gm) {
+                gm.attachToMesh(null)
+                gm.positionGizmoEnabled = false
+                gm.rotationGizmoEnabled = false
+                gm.scaleGizmoEnabled = false
+                gm.boundingBoxGizmoEnabled = false
+            }
+            return
+        }
+
+        const meshNodes = nodes.filter((n): n is Mesh => n instanceof Mesh)
+        if (meshNodes.length < 2) endMultiPivotSession()
+        for (const m of meshNodes) {
+            m.renderOutline = true
+            m.outlineColor = new Color3(0, 0, 0)
+            m.outlineWidth = 0.05
+        }
+        _prevOutlinedMeshes = meshNodes
+
+        if (!gm || !s) return
+
+        if (meshNodes.length === 0) {
+            gm.attachToMesh(null)
             gm.positionGizmoEnabled = false
             gm.rotationGizmoEnabled = false
             gm.scaleGizmoEnabled = false
             gm.boundingBoxGizmoEnabled = false
+            return
         }
+
+        if (meshNodes.length === 1) {
+            const m = meshNodes[0]
+            gm.positionGizmoEnabled = gizmoType === 'position'
+            gm.rotationGizmoEnabled = gizmoType === 'rotation'
+            gm.scaleGizmoEnabled = gizmoType === 'scale'
+            gm.boundingBoxGizmoEnabled = gizmoType === 'boundingBox'
+            gm.attachToMesh(m)
+            hookGizmoDrag()
+            return
+        }
+
+        const pivot = ensureEditorGizmoPivot(s)
+        if (!_multiPivotSession) {
+            const center = worldAabbCenterForMeshes(meshNodes)
+            pivot.setAbsolutePosition(center)
+            pivot.rotationQuaternion = null
+            pivot.rotation = Vector3.Zero()
+            pivot.scaling.copyFromFloats(1, 1, 1)
+        }
+        gm.positionGizmoEnabled = gizmoType === 'position'
+        gm.rotationGizmoEnabled = gizmoType === 'rotation'
+        gm.scaleGizmoEnabled = gizmoType === 'scale'
+        gm.boundingBoxGizmoEnabled = false
+        gm.attachToMesh(pivot)
+        hookGizmoDrag()
+    })
+
+    createEffect(() => {
+        nodeTick()
+        if (isPlaying()) return
+        const s = scene()
+        const gm = gizmoManager()
+        if (!s || !gm) return
+        const meshNodes = selectedNodes().filter(
+            (n): n is Mesh => n instanceof Mesh
+        )
+        if (meshNodes.length < 2 || _multiPivotSession) return
+        const pivot = ensureEditorGizmoPivot(s)
+        const center = worldAabbCenterForMeshes(meshNodes)
+        pivot.setAbsolutePosition(center)
+        pivot.rotationQuaternion = null
+        pivot.rotation = Vector3.Zero()
+        pivot.scaling.copyFromFloats(1, 1, 1)
     })
 
     onMount(async () => {
@@ -253,6 +408,7 @@ export function useEditorEngine(state: EditorState) {
         }
 
         setupEditorCamera(sceneInstance, canvas)
+        ensureEditorGizmoPivot(sceneInstance)
 
         const utilityLayer = new UtilityLayerRenderer(sceneInstance)
         const gm = new GizmoManager(sceneInstance, undefined, utilityLayer)
@@ -289,10 +445,16 @@ export function useEditorEngine(state: EditorState) {
                 const result = s.pick(
                     e.offsetX,
                     e.offsetY,
-                    (node) => node instanceof Mesh
+                    (node) =>
+                        node instanceof Mesh && !isSlopEditorHelper(node)
                 )
                 if (result.hit && result.pickedMesh) {
-                    setSelectedNode(result.pickedMesh as Mesh)
+                    const mesh = result.pickedMesh as Mesh
+                    if (e.ctrlKey || e.metaKey) {
+                        toggleSelectedNode(mesh)
+                    } else {
+                        setSelectedNode(mesh)
+                    }
                 } else {
                     setSelectedNode(undefined)
                 }
@@ -303,7 +465,12 @@ export function useEditorEngine(state: EditorState) {
 
         setGizmoManager(gm)
         sceneInstance.onBeforeRenderObservable.add(() => {
-            if (_isDraggingGizmo) setNodeTick((t) => t + 1)
+            if (gizmoManager()?.isDragging || _multiPivotSession) {
+                setNodeTick((t) => t + 1)
+            }
+        })
+        sceneInstance.onAfterRenderObservable.add(() => {
+            tickMultiPivotFromGizmo(sceneInstance)
         })
 
         sceneInstance.onNewMeshAddedObservable.add(() => scheduleAutoSave())
@@ -381,19 +548,6 @@ export function useEditorEngine(state: EditorState) {
                 _sceneSnapshot = null
             }
 
-            const gm = gizmoManager()
-            if (gm) {
-                gm.attachToMesh(
-                    selectedNode() instanceof Mesh
-                        ? (selectedNode() as Mesh)
-                        : null
-                )
-                gm.positionGizmoEnabled = selectedGizmo() === 'position'
-                gm.rotationGizmoEnabled = selectedGizmo() === 'rotation'
-                gm.scaleGizmoEnabled = selectedGizmo() === 'scale'
-                gm.boundingBoxGizmoEnabled = selectedGizmo() === 'boundingBox'
-            }
-
             const canvas = document.getElementById(
                 'canvas'
             ) as HTMLCanvasElement
@@ -466,6 +620,7 @@ export function useEditorEngine(state: EditorState) {
         )
         await rehydrateTextures(newScene)
         setupEditorCamera(newScene, canvas)
+        ensureEditorGizmoPivot(newScene)
 
         // Create new gizmo manager for the new scene
         const utilityLayer = new UtilityLayerRenderer(newScene)
@@ -483,6 +638,14 @@ export function useEditorEngine(state: EditorState) {
         newScene.onLightRemovedObservable.add(() => scheduleAutoSave())
         newScene.onNewTransformNodeAddedObservable.add(() => scheduleAutoSave())
         newScene.onTransformNodeRemovedObservable.add(() => scheduleAutoSave())
+        newScene.onBeforeRenderObservable.add(() => {
+            if (gizmoManager()?.isDragging || _multiPivotSession) {
+                setNodeTick((t) => t + 1)
+            }
+        })
+        newScene.onAfterRenderObservable.add(() => {
+            tickMultiPivotFromGizmo(newScene)
+        })
 
         // Dispose old scene & gizmo manager
         const oldGm = gizmoManager()

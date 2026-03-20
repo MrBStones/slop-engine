@@ -28,6 +28,8 @@ interface EditorTopbarProps {
     lastSaved: () => Date | null
     selectedGizmo: () => GizmoType
     onGizmoSelect: (gizmo: GizmoType) => void
+    /** When true, bounding box mode is unavailable (e.g. multi mesh selection). */
+    boundingBoxGizmoDisabled?: () => boolean
     canUndo?: () => boolean
     canRedo?: () => boolean
     onUndo?: () => void
@@ -193,7 +195,14 @@ export function EditorTopbar(props: Readonly<EditorTopbarProps>) {
                                 />
                             </IconButton>
                         </Tooltip>
-                        <Tooltip content="Bounding Box" position="bottom">
+                        <Tooltip
+                            content={
+                                props.boundingBoxGizmoDisabled?.()
+                                    ? 'Bounding box (single mesh only)'
+                                    : 'Bounding Box'
+                            }
+                            position="bottom"
+                        >
                             <IconButton
                                 label="Bounding Box"
                                 variant={
@@ -202,6 +211,7 @@ export function EditorTopbar(props: Readonly<EditorTopbarProps>) {
                                         : 'ghost'
                                 }
                                 size="sm"
+                                disabled={props.boundingBoxGizmoDisabled?.()}
                                 onClick={() =>
                                     props.onGizmoSelect('boundingBox')
                                 }

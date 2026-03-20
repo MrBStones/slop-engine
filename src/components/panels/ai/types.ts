@@ -52,7 +52,7 @@ export interface ClarificationInput {
 }
 
 export interface PlanStep {
-    agent: 'scene' | 'script' | 'ui' | 'asset'
+    agent: 'scene' | 'script' | 'ui' | 'asset' | 'test'
     description: string
 }
 

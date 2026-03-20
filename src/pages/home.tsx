@@ -1,3 +1,4 @@
+import { Mesh } from 'babylonjs'
 import {
     ResetConfirmModal,
     EditorTopbar,
@@ -62,6 +63,10 @@ export default function Home() {
             />
             <EditorTopbar
                 isPlaying={state.isPlaying}
+                boundingBoxGizmoDisabled={() =>
+                    state.selectedNodes().filter((n) => n instanceof Mesh)
+                        .length > 1
+                }
                 onPlayStop={engine.handlePlayStop}
                 onResetClick={() => {
                     if (state.isPlaying()) return

@@ -35,8 +35,11 @@ export function EditorLayout(props: Readonly<EditorLayoutProps>) {
         setPropertiesSizes,
         isVibeMode,
         scene,
+        selectedNodes,
         selectedNode,
         setSelectedNode,
+        toggleSelectedNode,
+        removeNodeFromSelection,
         setNodeTick,
         nodeTick,
         viewportTab,
@@ -67,6 +70,7 @@ export function EditorLayout(props: Readonly<EditorLayoutProps>) {
                     scene={scene}
                     selectedNode={selectedNode}
                     setSelectedNode={setSelectedNode}
+                    removeNodeFromSelection={removeNodeFromSelection}
                     setNodeTick={setNodeTick}
                     scheduleAutoSave={props.scheduleAutoSave}
                     pushUndoState={props.pushUndoState}
@@ -210,8 +214,13 @@ export function EditorLayout(props: Readonly<EditorLayoutProps>) {
                         >
                             <ScenePanel
                                 scene={scene}
+                                selectedNodes={selectedNodes}
                                 selectedNode={selectedNode}
                                 setSelectedNode={setSelectedNode}
+                                toggleSelectedNode={toggleSelectedNode}
+                                removeNodeFromSelection={
+                                    removeNodeFromSelection
+                                }
                                 nodeTick={nodeTick}
                                 setNodeTick={setNodeTick}
                                 pushUndoState={props.pushUndoState}

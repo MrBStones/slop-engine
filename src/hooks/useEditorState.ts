@@ -1,4 +1,9 @@
-import { createSignal, createMemo, type Accessor, type Setter } from 'solid-js'
+import {
+    createSignal,
+    createMemo,
+    type Accessor,
+    type Setter,
+} from 'solid-js'
 import type { Scene, Node, Engine, GizmoManager } from 'babylonjs'
 import { makePersisted } from '@solid-primitives/storage'
 import { getAssetStore } from '../assetStore'
@@ -26,8 +31,12 @@ export interface EditorState {
     setIsPlaying: Setter<boolean>
     scene: Accessor<Scene | undefined>
     setScene: Setter<Scene | undefined>
+    selectedNodes: Accessor<Node[]>
+    setSelectedNodes: Setter<Node[]>
     selectedNode: Accessor<Node | undefined>
-    setSelectedNode: Setter<Node | undefined>
+    setSelectedNode: (node: Node | undefined) => void
+    toggleSelectedNode: (node: Node) => void
+    removeNodeFromSelection: (node: Node) => void
     engine: Accessor<Engine | undefined>
     setEngine: Setter<Engine | undefined>
     nodeTick: Accessor<number>
@@ -88,7 +97,26 @@ export function useEditorState(): EditorState {
 
     const [isPlaying, setIsPlaying] = createSignal(false)
     const [scene, setScene] = createSignal<Scene>()
-    const [selectedNode, setSelectedNode] = createSignal<Node>()
+    const [selectedNodes, setSelectedNodes] = createSignal<Node[]>([])
+    const selectedNode = createMemo(() => selectedNodes().at(-1))
+
+    const setSelectedNode = (node: Node | undefined) => {
+        setSelectedNodes(node ? [node] : [])
+    }
+
+    const toggleSelectedNode = (node: Node) => {
+        setSelectedNodes((prev) => {
+            const i = prev.findIndex((n) => n.uniqueId === node.uniqueId)
+            if (i >= 0) return prev.filter((_, j) => j !== i)
+            return [...prev, node]
+        })
+    }
+
+    const removeNodeFromSelection = (node: Node) => {
+        setSelectedNodes((prev) =>
+            prev.filter((n) => n.uniqueId !== node.uniqueId)
+        )
+    }
     const [engine, setEngine] = createSignal<Engine>()
     const [nodeTick, setNodeTick] = createSignal(0)
 
@@ -128,8 +156,12 @@ export function useEditorState(): EditorState {
         setIsPlaying,
         scene,
         setScene,
+        selectedNodes,
+        setSelectedNodes,
         selectedNode,
         setSelectedNode,
+        toggleSelectedNode,
+        removeNodeFromSelection,
         engine,
         setEngine,
         nodeTick,

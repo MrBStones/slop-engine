@@ -167,6 +167,8 @@ function toolLabel(
                     ? 'UI Builder'
                     : agentType === 'asset'
                     ? 'Asset Generator'
+                    : agentType === 'test'
+                    ? 'Simulation Tester'
                     : 'Agent'
             const short = task
                 ? task.length > 50

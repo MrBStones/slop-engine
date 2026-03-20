@@ -429,7 +429,7 @@ export const savePrefabTool = {
 
 export const createGroupTool = {
     description:
-        'Create an empty TransformNode group for organizing objects. Use set_parent to add children.',
+        'Create an empty TransformNode group for organizing objects. Nest groups (parent group for the whole build, child groups for sub-assemblies) and use set_parent to attach meshes.',
     inputSchema: jsonSchema<{
         name: string
         position?: [number, number, number]
@@ -693,7 +693,7 @@ export const runAutonomousTestTool = {
 
 export const bulkSceneTool = {
     description:
-        'Execute multiple scene operations in one call. Use this for complex scene construction (building a house, landscape, etc). Operations run sequentially so later ones can reference nodes created by earlier ones. ALWAYS give explicit names to nodes you will reference later. Supported actions: add_mesh, add_light, update_node, delete_node, create_group, set_parent. REQUIRED params per action: add_mesh→type; add_light→type; update_node/delete_node/create_group→name; set_parent→node,parent. Never omit these.',
+        'Execute multiple scene operations in one call. Use this for complex scene construction (building a house, landscape, etc). Operations run sequentially so later ones can reference nodes created by earlier ones. For 2+ meshes, use create_group for an assembly root and nested sub-groups where logical; parent everything with set_parent instead of leaving many root-level siblings. ALWAYS give explicit names to nodes you will reference later. Supported actions: add_mesh, add_light, update_node, delete_node, create_group, set_parent. REQUIRED params per action: add_mesh→type; add_light→type; update_node/delete_node/create_group→name; set_parent→node,parent. Never omit these.',
     inputSchema: jsonSchema<{
         operations: Array<{ action: string; [key: string]: unknown }>
     }>({
@@ -722,7 +722,7 @@ export const bulkSceneTool = {
                     additionalProperties: true,
                 },
                 description:
-                    'Array of operations. Each has "action" plus that action\'s parameters. add_mesh: type (required), name, position, size, color, rotationDegrees. set_parent: node, parent (both required).',
+                    'Array of operations. Each has "action" plus that action\'s parameters. Prefer create_group + set_parent for hierarchy when adding multiple objects. add_mesh: type (required), name, position, size, color, rotationDegrees. set_parent: node, parent (both required).',
             },
         },
         required: ['operations'],
@@ -1042,18 +1042,8 @@ export const askClarificationTool = {
                         },
                         icon: {
                             type: 'string',
-                            enum: [
-                                'palette',
-                                'gamepad',
-                                'zap',
-                                'layout',
-                                'sparkles',
-                                'cube',
-                                'eye',
-                                'music',
-                            ],
                             description:
-                                'Icon hint: palette (art/style), gamepad (gaming), zap (speed/action), layout (structure), sparkles (effects), cube (3D objects), eye (camera/view), music (audio).',
+                                'Optional Heroicons v2 **outline** icon name (npm `solid-heroicons/outline`). Use camelCase or kebab-case export names, e.g. swatch, puzzle-piece, bolt, cube, sparkles, eye, musical-note, paint-brush. Unknown names show a default icon in the UI.',
                         },
                     },
                     required: ['id', 'label', 'description'],
@@ -1081,7 +1071,7 @@ export const presentPlanTool = {
     inputSchema: jsonSchema<{
         title: string
         steps: Array<{
-            agent: 'scene' | 'script' | 'ui' | 'asset'
+            agent: 'scene' | 'script' | 'ui' | 'asset' | 'test'
             description: string
         }>
     }>({
@@ -1099,7 +1089,7 @@ export const presentPlanTool = {
                     properties: {
                         agent: {
                             type: 'string',
-                            enum: ['scene', 'script', 'ui', 'asset'],
+                            enum: ['scene', 'script', 'ui', 'asset', 'test'],
                             description:
                                 'Which specialist agent handles this step.',
                         },
@@ -1120,9 +1110,9 @@ export const presentPlanTool = {
 
 export const spawnAgentTool = {
     description:
-        'Spawn a specialist subagent. Use agentType "scene" for 3D world building (meshes, lights, layout, assets), "script" for TypeScript gameplay scripting (writing/editing scripts, attaching them, debugging via simulation), "ui" for in-game UI (buttons, labels, HUDs via this.gui), and "asset" for generating image assets (textures, sprites, concept art). Provide a clear self-contained task and any relevant context.',
+        'Spawn a specialist subagent. Use agentType "scene" for builds, "script" for gameplay code, "ui" for in-game UI, "asset" for images/textures, "test" for simulation runs and autonomous tests (play/stop/logs/run_autonomous_test — not for editing). Provide a clear self-contained task and any relevant context.',
     inputSchema: jsonSchema<{
-        agentType: 'scene' | 'script' | 'ui' | 'asset'
+        agentType: 'scene' | 'script' | 'ui' | 'asset' | 'test'
         task: string
         context?: string
     }>({
@@ -1130,9 +1120,9 @@ export const spawnAgentTool = {
         properties: {
             agentType: {
                 type: 'string',
-                enum: ['scene', 'script', 'ui', 'asset'],
+                enum: ['scene', 'script', 'ui', 'asset', 'test'],
                 description:
-                    '"scene" for 3D world construction (meshes, lights, hierarchy, assets). "script" for TypeScript gameplay scripting, logic, and debugging. "ui" for in-game UI (buttons, labels, HUDs via scripts). "asset" for generating image assets (textures, sprites, concept art).',
+                    '"scene" for 3D world construction. "script" for TypeScript gameplay. "ui" for in-game UI. "asset" for images/textures. "test" for simulation-only validation (smoke, logs, run_autonomous_test).',
             },
             task: {
                 type: 'string',
