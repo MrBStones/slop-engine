@@ -43,6 +43,7 @@ import {
 } from '../ui'
 import type { TreeContextMenuEvent, ContextMenuItem } from '../ui'
 import { getAssetStore, setBlob } from '../../assetStore'
+import { isSlopEditorHelper } from '../../utils/editorGizmoUtils'
 
 function getNodeIcon(node: Node) {
     if (node instanceof Mesh) return cube
@@ -92,8 +93,11 @@ function sortByOrder(
 export default function ScenePanel(
     props: Readonly<{
         scene: Accessor<Scene | undefined>
+        selectedNodes: Accessor<Node[]>
         selectedNode: Accessor<Node | undefined>
         setSelectedNode: (node: Node | undefined) => void
+        toggleSelectedNode: (node: Node) => void
+        removeNodeFromSelection: (node: Node) => void
         nodeTick: Accessor<number>
         setNodeTick: Setter<number>
         pushUndoState: () => void
@@ -163,8 +167,8 @@ export default function ScenePanel(
         const scene = props.scene()
         if (!scene || node === scene.activeCamera) return
         props.pushUndoState()
-        if (props.selectedNode() === node) {
-            props.setSelectedNode(undefined)
+        if (props.selectedNodes().some((n) => n === node)) {
+            props.removeNodeFromSelection(node)
         }
         node.dispose()
         props.setNodeTick((t) => t + 1)
@@ -354,7 +358,10 @@ export default function ScenePanel(
 
         function nodeToTreeNode(node: Node): TreeNode<Node> {
             const parentKey = node.uniqueId.toString()
-            const children = sortByOrder(node.getChildren(), order, parentKey)
+            const rawChildren = node
+                .getChildren()
+                .filter((c) => !isSlopEditorHelper(c))
+            const children = sortByOrder(rawChildren, order, parentKey)
             return {
                 id: node.uniqueId.toString(),
                 label: node.name || '(unnamed)',
@@ -367,7 +374,11 @@ export default function ScenePanel(
             }
         }
 
-        const roots = sortByOrder([...scene.rootNodes], order, 'root')
+        const roots = sortByOrder(
+            [...scene.rootNodes].filter((n) => !isSlopEditorHelper(n)),
+            order,
+            'root'
+        )
         return roots.map((node) => nodeToTreeNode(node))
     }
 
@@ -380,7 +391,8 @@ export default function ScenePanel(
         return q ? filterTree(tree, q) : tree
     }
 
-    const selectedId = () => props.selectedNode()?.uniqueId?.toString()
+    const selectedIds = () =>
+        props.selectedNodes().map((n) => n.uniqueId.toString())
 
     const handleMove = (event: TreeMoveEvent<Node>) => {
         const source = event.sourceData
@@ -584,9 +596,14 @@ export default function ScenePanel(
             <div class="flex-1 overflow-y-auto">
                 <TreeView
                     items={treeItems()}
-                    selectedId={selectedId}
-                    onSelect={(_id, data) => {
-                        props.setSelectedNode(data ?? undefined)
+                    selectedIds={selectedIds}
+                    onSelect={(_id, data, mod) => {
+                        if (!data) return
+                        if (mod?.ctrlKey || mod?.metaKey) {
+                            props.toggleSelectedNode(data)
+                        } else {
+                            props.setSelectedNode(data)
+                        }
                     }}
                     onMove={handleMove}
                     onContextMenu={(event: TreeContextMenuEvent<Node>) => {

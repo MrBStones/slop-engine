@@ -19,6 +19,7 @@ import {
     buildScriptAgentSystemPrompt,
     buildUIAgentSystemPrompt,
     buildAssetAgentSystemPrompt,
+    buildTestAgentSystemPrompt,
     buildCoordinatorSystemPrompt,
 } from './prompts'
 import {
@@ -81,7 +82,7 @@ type ModelSettings = {
 
 function getModel(
     settings: ModelSettings | undefined,
-    agentType: 'orchestrator' | 'scene' | 'script' | 'ui' | 'asset',
+    agentType: 'orchestrator' | 'scene' | 'script' | 'ui' | 'asset' | 'test',
     envDefault: string,
     env: Record<string, string>
 ) {
@@ -242,11 +243,6 @@ export function chatApiPlugin(): Plugin {
                         system: buildCoordinatorSystemPrompt(selectedNode),
                         tools: {
                             get_scene: getSceneTool,
-                            play_simulation: playSimulationTool,
-                            stop_simulation: stopSimulationTool,
-                            sleep: sleepTool,
-                            get_console_logs: getConsoleLogsTool,
-                            run_autonomous_test: runAutonomousTestTool,
                             spawn_agent: spawnAgentTool,
                             ask_clarification: askClarificationTool,
                             present_plan: presentPlanTool,
@@ -413,7 +409,7 @@ export function chatApiPlugin(): Plugin {
                         body
                     ) as {
                         messages: SubagentMessage[]
-                        agentType: 'scene' | 'script' | 'ui' | 'asset'
+                        agentType: 'scene' | 'script' | 'ui' | 'asset' | 'test'
                         modelSettings?: ModelSettings
                     }
 
@@ -427,6 +423,8 @@ export function chatApiPlugin(): Plugin {
                             ? buildUIAgentSystemPrompt(server.config.root)
                             : agentType === 'asset'
                             ? buildAssetAgentSystemPrompt()
+                            : agentType === 'test'
+                            ? buildTestAgentSystemPrompt()
                             : buildSceneAgentSystemPrompt()
 
                     const tools =
@@ -443,6 +441,15 @@ export function chatApiPlugin(): Plugin {
                                   set_billboard_mode: setBillboardModeTool,
                                   delete_asset: deleteAssetTool,
                                   create_asset_folder: createAssetFolderTool,
+                              }
+                            : agentType === 'test'
+                            ? {
+                                  get_scene: getSceneTool,
+                                  play_simulation: playSimulationTool,
+                                  stop_simulation: stopSimulationTool,
+                                  sleep: sleepTool,
+                                  get_console_logs: getConsoleLogsTool,
+                                  run_autonomous_test: runAutonomousTestTool,
                               }
                             : isScriptingAgent
                             ? {

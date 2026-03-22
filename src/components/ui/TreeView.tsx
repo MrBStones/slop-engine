@@ -27,10 +27,21 @@ export interface TreeContextMenuEvent<T = unknown> {
     y: number
 }
 
+export interface TreeSelectModifiers {
+    ctrlKey: boolean
+    metaKey: boolean
+}
+
 export interface TreeViewProps<T = unknown> {
     items: TreeNode<T>[]
     selectedId?: Accessor<string | undefined>
-    onSelect?: (id: string, data: T | undefined) => void
+    /** When set, highlights any item whose id is in the list (multi-select). */
+    selectedIds?: Accessor<readonly string[] | undefined>
+    onSelect?: (
+        id: string,
+        data: T | undefined,
+        modifiers?: TreeSelectModifiers
+    ) => void
     onDoubleClick?: (id: string, data: T | undefined) => void
     onMove?: (event: TreeMoveEvent<T>) => void
     onContextMenu?: (event: TreeContextMenuEvent<T>) => void
@@ -67,7 +78,14 @@ function TreeItem<T>(
         node: TreeNode<T>
         depth: number
         selectedId: Accessor<string | undefined> | undefined
-        onSelect: ((id: string, data: T | undefined) => void) | undefined
+        selectedIds: Accessor<readonly string[] | undefined> | undefined
+        onSelect:
+            | ((
+                  id: string,
+                  data: T | undefined,
+                  modifiers?: TreeSelectModifiers
+              ) => void)
+            | undefined
         onDoubleClick: ((id: string, data: T | undefined) => void) | undefined
         onContextMenu: ((event: TreeContextMenuEvent<T>) => void) | undefined
         expanded: Accessor<Set<string>>
@@ -82,7 +100,11 @@ function TreeItem<T>(
 ) {
     const hasChildren = () => (props.node.children?.length ?? 0) > 0
     const isExpanded = () => props.expanded().has(props.node.id)
-    const isSelected = () => props.selectedId?.() === props.node.id
+    const isSelected = () => {
+        const ids = props.selectedIds?.()
+        if (ids && ids.length > 0) return ids.includes(props.node.id)
+        return props.selectedId?.() === props.node.id
+    }
     const isDragging = () => props.dragState()?.id === props.node.id
 
     const toggleExpand = (e: MouseEvent) => {
@@ -95,8 +117,11 @@ function TreeItem<T>(
         })
     }
 
-    const handleSelect = () => {
-        props.onSelect?.(props.node.id, props.node.data)
+    const handleSelect = (e: MouseEvent) => {
+        props.onSelect?.(props.node.id, props.node.data, {
+            ctrlKey: e.ctrlKey,
+            metaKey: e.metaKey,
+        })
     }
 
     const handleDoubleClick = () => {
@@ -211,7 +236,7 @@ function TreeItem<T>(
                         : ''
                 }`}
                 style={{ 'padding-left': `${props.depth * 1.25 + 0.25}rem` }}
-                onClick={handleSelect}
+                onClick={(e) => handleSelect(e)}
                 onDblClick={handleDoubleClick}
                 onContextMenu={handleContextMenu}
                 draggable={true}
@@ -255,6 +280,7 @@ function TreeItem<T>(
                                 node={child}
                                 depth={props.depth + 1}
                                 selectedId={props.selectedId}
+                                selectedIds={props.selectedIds}
                                 onSelect={props.onSelect}
                                 onDoubleClick={props.onDoubleClick}
                                 onContextMenu={props.onContextMenu}
@@ -312,6 +338,7 @@ export function TreeView<T = unknown>(props: TreeViewProps<T>) {
                         node={item}
                         depth={0}
                         selectedId={props.selectedId}
+                        selectedIds={props.selectedIds}
                         onSelect={props.onSelect}
                         onDoubleClick={props.onDoubleClick}
                         onContextMenu={props.onContextMenu}

@@ -21,6 +21,7 @@ const AGENT_TYPES: AgentType[] = [
     'script',
     'ui',
     'asset',
+    'test',
 ]
 
 export function ModelSettingsPanel() {
@@ -217,7 +218,10 @@ export function ModelSettingsPanel() {
                 {(agentType) => (
                     <Input
                         label={AGENT_LABELS[agentType]}
-                        value={modelSettings().models[agentType]}
+                        value={
+                            modelSettings().models[agentType] ??
+                            getDefaultModel(modelSettings().provider, agentType)
+                        }
                         onInput={(e) =>
                             setModel(agentType, e.currentTarget.value)
                         }

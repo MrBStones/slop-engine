@@ -1,7 +1,10 @@
 import type { Accessor, Setter } from 'solid-js'
 import { createPlanningPromise } from './planningStore'
 import type { Scene, Node } from 'babylonjs'
-import type { ModelSettings } from '../../../modelSettingsStore'
+import {
+    type ModelSettings,
+    normalizeModelSettings,
+} from '../../../modelSettingsStore'
 import {
     getAssetStore,
     getBlob,
@@ -218,6 +221,7 @@ export interface ToolExecutorContext {
     scene: Accessor<Scene | undefined>
     selectedNode: Accessor<Node | undefined>
     setSelectedNode: (node: Node | undefined) => void
+    removeNodeFromSelection: (node: Node) => void
     setNodeTick: Setter<number>
     pushUndoState: () => void
     isPlaying: Accessor<boolean>
@@ -474,7 +478,7 @@ export function createToolExecutor(
         )
 
         if (openScript()?.path === args.path) {
-            await openScriptFile(args.path)
+            await openScriptFile(args.path, { revealInCenter: true })
         }
 
         const errors = await typeCheckContent(args.content)
@@ -540,9 +544,7 @@ export function createToolExecutor(
         if (!s) throw new Error('Scene not initialized')
         ctx.pushUndoState()
         const node = s.getNodeByName(args.name)
-        if (ctx.selectedNode() === node) {
-            ctx.setSelectedNode(undefined)
-        }
+        if (node) ctx.removeNodeFromSelection(node)
         deleteNodeFromScene(s, args.name)
         ctx.setNodeTick((t) => t + 1)
         return `Deleted node "${args.name}"`
@@ -681,7 +683,7 @@ export function createToolExecutor(
         )
         await setBlob(args.path, new Blob([updated], { type: 'text/plain' }))
         if (openScript()?.path === args.path) {
-            await openScriptFile(args.path)
+            await openScriptFile(args.path, { revealInCenter: true })
         }
 
         const errors = await typeCheckContent(updated)
@@ -1608,7 +1610,7 @@ export function createToolExecutor(
 
     const executeSpawnAgent = async (
         args: {
-            agentType: 'scene' | 'script' | 'ui' | 'asset'
+            agentType: 'scene' | 'script' | 'ui' | 'asset' | 'test'
             task: string
             context?: string
         },
@@ -1684,7 +1686,9 @@ export function createToolExecutor(
                         body: JSON.stringify({
                             messages,
                             agentType: args.agentType,
-                            modelSettings: ctx.modelSettings(),
+                            modelSettings: normalizeModelSettings(
+                                ctx.modelSettings()
+                            ),
                         }),
                         signal: controller.signal,
                     })
@@ -1910,7 +1914,7 @@ export function createToolExecutor(
             case 'spawn_agent':
                 return executeSpawnAgent(
                     input as {
-                        agentType: 'scene' | 'script' | 'ui' | 'asset'
+                        agentType: 'scene' | 'script' | 'ui' | 'asset' | 'test'
                         task: string
                         context?: string
                     },

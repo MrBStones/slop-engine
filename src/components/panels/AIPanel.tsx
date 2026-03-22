@@ -33,7 +33,7 @@ import {
 import { ChatMessage } from './ai/ChatMessage'
 import { HistoryItem } from './ai/HistoryItem'
 import { createToolExecutor } from './ai/toolExecutor'
-import { modelSettings } from '../../modelSettingsStore'
+import { modelSettings, normalizeModelSettings } from '../../modelSettingsStore'
 import { ModelSettingsPanel } from './ai/ModelSettingsPanel'
 
 const MAX_ROUND_TRIPS = 12
@@ -44,6 +44,7 @@ export default function AIPanel(
         scene: Accessor<import('babylonjs').Scene | undefined>
         selectedNode: Accessor<import('babylonjs').Node | undefined>
         setSelectedNode: (node: import('babylonjs').Node | undefined) => void
+        removeNodeFromSelection: (node: import('babylonjs').Node) => void
         setNodeTick: Setter<number>
         scheduleAutoSave: () => void
         pushUndoState: () => void
@@ -101,7 +102,7 @@ export default function AIPanel(
                       }
                     : undefined
                 return {
-                    modelSettings: modelSettings(),
+                    modelSettings: normalizeModelSettings(modelSettings()),
                     ...(selectedNode && { selectedNode }),
                 }
             },
@@ -164,6 +165,7 @@ export default function AIPanel(
         scene: props.scene,
         selectedNode: props.selectedNode,
         setSelectedNode: props.setSelectedNode,
+        removeNodeFromSelection: props.removeNodeFromSelection,
         setNodeTick: props.setNodeTick,
         pushUndoState: props.pushUndoState,
         isPlaying: props.isPlaying,
@@ -844,7 +846,7 @@ export default function AIPanel(
                         "
                         data-disabled={isWorking()}
                     >
-                        <div class="flex items-end gap-2 px-3 pt-3">
+                        <div class="px-3 pt-3">
                             <input
                                 ref={(el) => {
                                     fileInputRef = el
@@ -858,31 +860,10 @@ export default function AIPanel(
                                     setPendingFiles(el.files ?? undefined)
                                 }}
                             />
-                            <button
-                                type="button"
-                                class="mb-1 p-2 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-700/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                onClick={() => fileInputRef?.click()}
-                                disabled={isWorking()}
-                                title="Attach image"
-                            >
-                                <svg
-                                    class="w-4 h-4"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                >
-                                    <path
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                                    />
-                                </svg>
-                            </button>
                             <textarea
                                 ref={inputRef}
                                 class="
-                                    min-h-11 max-h-45 flex-1 overflow-y-auto bg-transparent text-sm text-gray-100
+                                    min-h-11 max-h-45 w-full overflow-y-auto bg-transparent text-sm text-gray-100
                                     placeholder:text-gray-500 resize-none leading-5
                                     focus:outline-none disabled:cursor-not-allowed
                                 "
@@ -893,13 +874,47 @@ export default function AIPanel(
                                 onKeyDown={handleKeyDown}
                                 disabled={isWorking()}
                             />
+                        </div>
+                        <div class="flex items-center justify-between gap-2 px-3 pb-2 pt-1.5 text-[11px] text-gray-500">
+                            <div class="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    class="inline-flex h-8 items-center justify-center rounded-lg p-1.5 text-gray-400 hover:text-gray-200 hover:bg-gray-700/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    onClick={() => fileInputRef?.click()}
+                                    disabled={isWorking()}
+                                    title="Attach image"
+                                >
+                                    <svg
+                                        class="w-4 h-4"
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                    >
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                                        />
+                                    </svg>
+                                </button>
+                                <Show when={pendingFiles()?.length}>
+                                    <span class="text-blue-400 text-xs">
+                                        {pendingFiles()!.length} image
+                                        {pendingFiles()!.length === 1
+                                            ? ''
+                                            : 's'}
+                                        attached
+                                    </span>
+                                </Show>
+                            </div>
                             <Show
                                 when={!isWorking()}
                                 fallback={
                                     <button
                                         class="
-                                            mb-1 inline-flex h-10 items-center justify-center rounded-lg
-                                            border border-red-500/40 bg-red-500/12 px-3 text-xs font-medium text-red-200
+                                            inline-flex h-8 items-center justify-center rounded-lg
+                                            border border-red-500/40 bg-red-500/12 px-2.5 text-[11px] font-medium text-red-200
                                             transition-colors hover:bg-red-500/18 focus:outline-none focus:ring-2 focus:ring-red-500/50
                                         "
                                         type="button"
@@ -911,7 +926,7 @@ export default function AIPanel(
                             >
                                 <button
                                     class="
-                                        mb-1 inline-flex h-10 items-center gap-2 rounded-lg px-3.5 text-sm font-medium
+                                        inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium
                                         transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500/60
                                         disabled:cursor-not-allowed disabled:opacity-45
                                         bg-blue-500 text-white hover:bg-blue-400
@@ -938,23 +953,6 @@ export default function AIPanel(
                                     </svg>
                                 </button>
                             </Show>
-                        </div>
-                        <div class="flex items-center justify-between px-3 pb-2 pt-1 text-[11px] text-gray-500">
-                            <span class="flex items-center gap-2">
-                                Enter sends. Shift+Enter adds a new line.
-                                <Show when={pendingFiles()?.length}>
-                                    <span class="text-blue-400">
-                                        {pendingFiles()!.length} image
-                                        {pendingFiles()!.length === 1
-                                            ? ''
-                                            : 's'}
-                                        attached
-                                    </span>
-                                </Show>
-                            </span>
-                            <span class="text-gray-400/80">
-                                {isWorking() ? 'AI is responding…' : 'Ready'}
-                            </span>
                         </div>
                     </div>
                 </form>

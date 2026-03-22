@@ -3,7 +3,13 @@ import { makePersisted } from '@solid-primitives/storage'
 
 export type AIProvider = 'azure' | 'openrouter' | 'google'
 
-export type AgentType = 'orchestrator' | 'scene' | 'script' | 'ui' | 'asset'
+export type AgentType =
+    | 'orchestrator'
+    | 'scene'
+    | 'script'
+    | 'ui'
+    | 'asset'
+    | 'test'
 
 export interface ModelCredentials {
     azureApiKey?: string
@@ -24,6 +30,7 @@ const DEFAULT_MODELS: Record<AgentType, string> = {
     script: 'gpt-5.3-chat',
     ui: 'gpt-5.3-chat',
     asset: 'gpt-5.3-chat',
+    test: 'gpt-5.3-chat',
 }
 
 const DEFAULT_OPENROUTER_MODELS: Record<AgentType, string> = {
@@ -32,6 +39,7 @@ const DEFAULT_OPENROUTER_MODELS: Record<AgentType, string> = {
     script: 'anthropic/claude-4.6-sonnet',
     ui: 'google/gemini-3.1-pro-preview',
     asset: 'openai/gpt-5.3-chat',
+    test: 'openai/gpt-5.3-chat',
 }
 
 const DEFAULT_GOOGLE_MODELS: Record<AgentType, string> = {
@@ -40,6 +48,7 @@ const DEFAULT_GOOGLE_MODELS: Record<AgentType, string> = {
     script: 'gemini-3.1-pro-preview',
     ui: 'gemini-3.1-pro-preview',
     asset: 'gemini-3.1-pro-preview',
+    test: 'gemini-3.1-pro-preview',
 }
 
 export const AGENT_LABELS: Record<AgentType, string> = {
@@ -48,6 +57,28 @@ export const AGENT_LABELS: Record<AgentType, string> = {
     script: 'Script Agent',
     ui: 'UI Agent',
     asset: 'Asset Generator',
+    test: 'Test Agent',
+}
+
+const ALL_AGENT_TYPES: AgentType[] = [
+    'orchestrator',
+    'scene',
+    'script',
+    'ui',
+    'asset',
+    'test',
+]
+
+/** Merge persisted settings so new agent types get default model IDs. */
+export function normalizeModelSettings(settings: ModelSettings): ModelSettings {
+    const provider = settings.provider
+    const prev = settings.models
+    const models = { ...prev } as Record<AgentType, string>
+    for (const at of ALL_AGENT_TYPES) {
+        const v = models[at]?.trim()
+        if (!v) models[at] = getDefaultModel(provider, at)
+    }
+    return { ...settings, models }
 }
 
 export function getDefaultModel(

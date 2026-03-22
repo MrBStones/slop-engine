@@ -23,6 +23,11 @@ const agentColors: Record<string, { bg: string; text: string; label: string }> =
             text: 'text-pink-400',
             label: 'Asset',
         },
+        test: {
+            bg: 'bg-cyan-500/20',
+            text: 'text-cyan-400',
+            label: 'Test',
+        },
     }
 
 export function PlanSummary(props: {
