@@ -26,6 +26,7 @@ import {
     createDefaultScene,
     loadSceneFromJson,
     rehydrateTextures,
+    rehydrateImportedModels,
     serializeScene,
     setupEditorCamera,
     captureSceneSnapshot,
@@ -41,6 +42,8 @@ import {
     getAllBlobs,
     restoreAllBlobs,
     getAssetStore,
+    getSceneJsonFromDB,
+    saveSceneJsonToDB,
     type AssetNode,
 } from '../assetStore'
 import type { EditorState, GizmoType } from './useEditorState'
@@ -144,12 +147,16 @@ export function useEditorEngine(state: EditorState) {
 
     function performSave(s: Scene) {
         try {
-            setSceneJson(serializeScene(s))
+            const json = serializeScene(s)
+            setSceneJson(json)
+            saveSceneJsonToDB(json).catch((err) =>
+                console.error('Failed to persist scene to IndexedDB.', err)
+            )
             setLastSaved(new Date())
             setIsDirty(false)
         } catch (error) {
             setIsDirty(true)
-            console.error('Failed to persist scene state.', error)
+            console.error('Failed to serialize scene.', error)
         }
     }
 
@@ -388,7 +395,19 @@ export function useEditorEngine(state: EditorState) {
         _physicsPlugin = physicsPlugin
 
         let sceneInstance: Scene
-        const savedJson = sceneJson()
+
+        // Migrate scene data from localStorage (pre-IndexedDB) on first load
+        const LS_SCENE_KEY = 'slop-engine-scene-v1'
+        let savedJson = await getSceneJsonFromDB()
+        if (!savedJson) {
+            const lsJson = localStorage.getItem(LS_SCENE_KEY)
+            if (lsJson) {
+                savedJson = lsJson
+                await saveSceneJsonToDB(lsJson)
+                localStorage.removeItem(LS_SCENE_KEY)
+            }
+        }
+
         if (savedJson) {
             try {
                 const result = await loadSceneFromJson(
@@ -398,6 +417,7 @@ export function useEditorEngine(state: EditorState) {
                 )
                 sceneInstance = result.scene
                 await rehydrateTextures(sceneInstance)
+                await rehydrateImportedModels(sceneInstance)
             } catch {
                 const result = createDefaultScene(eng, physicsPlugin)
                 sceneInstance = result.scene
@@ -619,6 +639,7 @@ export function useEditorEngine(state: EditorState) {
             _physicsPlugin
         )
         await rehydrateTextures(newScene)
+        await rehydrateImportedModels(newScene)
         setupEditorCamera(newScene, canvas)
         ensureEditorGizmoPivot(newScene)
 

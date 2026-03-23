@@ -1020,6 +1020,62 @@ export function createToolExecutor(
         return `Generated and saved image to "${pathStr}"`
     }
 
+    const executeGenerateTripoMesh = async (args: {
+        prompt: string
+        path: string
+        negativePrompt?: string
+    }): Promise<string> => {
+        const res = await fetch('/api/generate-tripo-mesh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                prompt: args.prompt,
+                path: args.path,
+                negativePrompt: args.negativePrompt,
+            }),
+        })
+        if (!res.ok) {
+            const err = (await res.json().catch(() => ({}))) as {
+                error?: string
+            }
+            throw new Error(
+                err.error ?? `Tripo mesh generation failed (${res.status})`
+            )
+        }
+        const { path, base64, contentType } = (await res.json()) as {
+            path: string
+            base64: string
+            contentType: string
+        }
+        const arr = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+        const blob = new Blob([arr], { type: contentType })
+
+        const store = getAssetStore()
+        let pathStr = path.trim()
+        if (pathStr.startsWith('/')) pathStr = pathStr.slice(1)
+        const segments = pathStr.split('/').filter(Boolean)
+        if (segments.length === 0) {
+            throw new Error('Invalid path for generated mesh')
+        }
+        const fileName = segments.at(-1)!
+        let parentPath = ''
+        for (let i = 0; i < segments.length - 1; i++) {
+            const dirName = segments[i]
+            const dirPath = parentPath ? `${parentPath}/${dirName}` : dirName
+            if (!store.findNode(store.tree(), dirPath)) {
+                store.addNode(parentPath, dirName, 'folder')
+            }
+            parentPath = dirPath
+        }
+        if (!store.findNode(store.tree(), pathStr)) {
+            store.addNode(parentPath, fileName, 'file')
+        }
+
+        await setBlob(pathStr, blob)
+        ctx.setNodeTick((t) => t + 1)
+        return `Generated Tripo 3D mesh and saved to "${pathStr}"`
+    }
+
     const resolveAsset: AssetResolver = (path) => getBlob(path)
 
     const executeImportAsset = async (args: {
@@ -1049,7 +1105,8 @@ export function createToolExecutor(
             blob,
             filename,
             assetDir,
-            resolveAsset
+            resolveAsset,
+            args.path
         )
 
         if (args.position) {
@@ -1871,6 +1928,14 @@ export function createToolExecutor(
                         prompt: string
                         path: string
                         imageSize?: string
+                    }
+                )
+            case 'generate_tripo_mesh':
+                return executeGenerateTripoMesh(
+                    input as {
+                        prompt: string
+                        path: string
+                        negativePrompt?: string
                     }
                 )
             case 'import_asset':

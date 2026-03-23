@@ -99,7 +99,11 @@ if (!(AbstractMesh.prototype as any).getBoundingSize) {
  * @param tsSource - Raw TypeScript source
  * @param filePath - Path used for stack traces (e.g. "scripts/MyScript.ts")
  */
-function compileScript(tsSource: string, filePath: string): new () => Script {
+type ScriptSubclassConstructor = (new () => Script) & {
+    nodeType?: ScriptNodeType
+}
+
+function compileScript(tsSource: string, filePath: string): ScriptSubclassConstructor {
     // Transpile TS → JS (CJS so we can extract exports.default)
     const { code: jsCode } = transform(tsSource, {
         transforms: ['typescript', 'imports'],
@@ -151,7 +155,7 @@ function compileScript(tsSource: string, filePath: string): new () => Script {
         )
     }
 
-    return ScriptClass as (new () => Script) & { nodeType?: ScriptNodeType }
+    return ScriptClass as ScriptSubclassConstructor
 }
 
 // ---------------------------------------------------------------------------

@@ -92,10 +92,7 @@ export function useEditorState(): EditorState {
         return sceneSizes()
     })
 
-    const [sceneJson, setSceneJson] = makePersisted(
-        createSignal<string | null>(null),
-        { name: 'slop-engine-scene-v1' }
-    )
+    const [sceneJson, setSceneJson] = createSignal<string | null>(null)
 
     const [isPlaying, setIsPlaying] = createSignal(false)
     const [scene, setScene] = createSignal<Scene>()

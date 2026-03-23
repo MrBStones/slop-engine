@@ -33,6 +33,7 @@ import {
     askClarificationTool,
     presentPlanTool,
     generateImageTool,
+    generateTripoMeshTool,
     createScriptTool,
     listScriptsTool,
     readScriptTool,
@@ -62,6 +63,10 @@ import {
 import { typeCheckScript } from './script-typecheck'
 import { createLookupHandler } from './api-lookup'
 import { generateImage, pollTaskResult } from './nanobanana'
+import {
+    tripoPollUntilModelReady,
+    tripoSubmitTextToModel,
+} from './tripo'
 
 // Minimal CoreMessage-compatible type for the subagent endpoint
 type SubagentMessage = {
@@ -230,7 +235,10 @@ export function chatApiPlugin(): Plugin {
                             selectedNode?: { name: string; type: string }
                         }
 
-                    const modelMessages = await convertToModelMessages(messages)
+                    const modelMessages = await convertToModelMessages(
+                        messages,
+                        { ignoreIncompleteToolCalls: true }
+                    )
                     const model = getModel(
                         modelSettings,
                         'orchestrator',
@@ -276,6 +284,106 @@ export function chatApiPlugin(): Plugin {
                                     error instanceof Error
                                         ? error.message
                                         : 'Internal server error',
+                            })
+                        )
+                    }
+                }
+            })
+
+            server.middlewares.use('/api/generate-tripo-mesh', async (req, res) => {
+                if (req.method !== 'POST') {
+                    res.statusCode = 405
+                    res.end('Method Not Allowed')
+                    return
+                }
+                const apiKey = env.TRIPO_API_KEY
+                if (!apiKey) {
+                    res.statusCode = 500
+                    res.setHeader('Content-Type', 'application/json')
+                    res.end(
+                        JSON.stringify({
+                            error: 'TRIPO_API_KEY not configured',
+                        })
+                    )
+                    return
+                }
+                try {
+                    const body = await new Promise<string>((resolve) => {
+                        let data = ''
+                        req.on('data', (chunk: Buffer) => {
+                            data += chunk.toString()
+                        })
+                        req.on('end', () => resolve(data))
+                    })
+                    const { prompt, path, negativePrompt } = JSON.parse(body) as {
+                        prompt: string
+                        path: string
+                        negativePrompt?: string
+                    }
+                    if (!prompt || !path) {
+                        res.statusCode = 400
+                        res.setHeader('Content-Type', 'application/json')
+                        res.end(
+                            JSON.stringify({
+                                error: 'prompt and path are required',
+                            })
+                        )
+                        return
+                    }
+                    if (!path.toLowerCase().endsWith('.glb')) {
+                        res.statusCode = 400
+                        res.setHeader('Content-Type', 'application/json')
+                        res.end(
+                            JSON.stringify({
+                                error: 'path must end with .glb',
+                            })
+                        )
+                        return
+                    }
+                    const taskId = await tripoSubmitTextToModel({
+                        apiKey,
+                        prompt,
+                        negativePrompt,
+                    })
+                    const { modelUrl } = await tripoPollUntilModelReady({
+                        apiKey,
+                        taskId,
+                    })
+                    const glbRes = await fetch(modelUrl)
+                    if (!glbRes.ok) {
+                        res.statusCode = 500
+                        res.setHeader('Content-Type', 'application/json')
+                        res.end(
+                            JSON.stringify({
+                                error: 'Failed to download generated GLB',
+                            })
+                        )
+                        return
+                    }
+                    const buf = await glbRes.arrayBuffer()
+                    const base64 = Buffer.from(buf).toString('base64')
+                    const contentType =
+                        glbRes.headers.get('content-type') ??
+                        'model/gltf-binary'
+                    res.setHeader('Content-Type', 'application/json')
+                    res.end(
+                        JSON.stringify({
+                            path,
+                            base64,
+                            contentType,
+                        })
+                    )
+                } catch (error) {
+                    console.error('[generate-tripo-mesh]', error)
+                    if (!res.headersSent) {
+                        res.statusCode = 500
+                        res.setHeader('Content-Type', 'application/json')
+                        res.end(
+                            JSON.stringify({
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : 'Tripo mesh generation failed',
                             })
                         )
                     }
@@ -432,6 +540,7 @@ export function chatApiPlugin(): Plugin {
                             ? {
                                   get_scene: getSceneTool,
                                   generate_image: generateImageTool,
+                                  generate_tripo_mesh: generateTripoMeshTool,
                                   list_assets: listAssetsTool,
                                   list_image_assets: listImageAssetsTool,
                                   apply_texture: applyTextureTool,

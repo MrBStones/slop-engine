@@ -976,7 +976,8 @@ export async function importModelToScene(
     blob: Blob,
     filename: string,
     assetDir?: string,
-    resolveAsset?: AssetResolver
+    resolveAsset?: AssetResolver,
+    assetPath?: string
 ): Promise<TransformNode> {
     const ext = getLoaderExtension(filename)
     if (!ext) {
@@ -987,14 +988,12 @@ export async function importModelToScene(
     let blobUrlsToRevoke: string[] = []
 
     if (ext === '.obj' && resolveAsset) {
-        // Inline MTL + texture blob URLs so the loader resolves everything
         const prepared = await prepareObjDataUrl(
             blob,
             assetDir ?? '',
             resolveAsset
         )
         url = prepared.url
-        // Don't revoke texture blob URLs immediately – textures load async
     } else {
         url = URL.createObjectURL(blob)
         blobUrlsToRevoke = [url]
@@ -1010,9 +1009,11 @@ export async function importModelToScene(
             ext
         )
 
-        // Create a root TransformNode to group all imported meshes
         const baseName = filename.slice(0, filename.lastIndexOf('.'))
         const root = new TransformNode(nextName(baseName), scene)
+        if (assetPath) {
+            root.metadata = { ...root.metadata, assetPath }
+        }
 
         for (const mesh of result.meshes) {
             if (!mesh.parent) {

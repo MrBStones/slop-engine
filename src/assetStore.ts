@@ -2,8 +2,10 @@ import { createSignal } from 'solid-js'
 import { makePersisted } from '@solid-primitives/storage'
 
 const DB_NAME = 'slop-engine-assets'
-const DB_VERSION = 1
+const DB_VERSION = 2
 const STORE_NAME = 'blobs'
+const SCENE_STORE = 'scene'
+const SCENE_KEY = 'current'
 
 function openDB(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
@@ -14,6 +16,9 @@ function openDB(): Promise<IDBDatabase> {
             const db = (e.target as IDBOpenDBRequest).result
             if (!db.objectStoreNames.contains(STORE_NAME)) {
                 db.createObjectStore(STORE_NAME)
+            }
+            if (!db.objectStoreNames.contains(SCENE_STORE)) {
+                db.createObjectStore(SCENE_STORE)
             }
         }
     })
@@ -90,6 +95,38 @@ export async function restoreAllBlobs(blobs: Map<string, Blob>): Promise<void> {
         }
         tx.oncomplete = () => resolve()
         tx.onerror = () => reject(tx.error)
+    })
+}
+
+// ── Scene JSON persistence (IndexedDB) ──────────────────────────────
+
+export async function getSceneJsonFromDB(): Promise<string | null> {
+    const db = await openDB()
+    return new Promise((resolve) => {
+        const tx = db.transaction(SCENE_STORE, 'readonly')
+        const req = tx.objectStore(SCENE_STORE).get(SCENE_KEY)
+        req.onsuccess = () => resolve((req.result as string) ?? null)
+        req.onerror = () => resolve(null)
+    })
+}
+
+export async function saveSceneJsonToDB(json: string): Promise<void> {
+    const db = await openDB()
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(SCENE_STORE, 'readwrite')
+        const req = tx.objectStore(SCENE_STORE).put(json, SCENE_KEY)
+        req.onsuccess = () => resolve()
+        req.onerror = () => reject(req.error)
+    })
+}
+
+export async function clearSceneJsonFromDB(): Promise<void> {
+    const db = await openDB()
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(SCENE_STORE, 'readwrite')
+        const req = tx.objectStore(SCENE_STORE).delete(SCENE_KEY)
+        req.onsuccess = () => resolve()
+        req.onerror = () => reject(req.error)
     })
 }
 

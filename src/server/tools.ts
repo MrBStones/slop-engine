@@ -787,6 +787,36 @@ export const generateImageTool = {
     }),
 }
 
+export const generateTripoMeshTool = {
+    description:
+        'Generate a 3D mesh (GLB) from a text prompt using Tripo AI and save it to the asset store. Requires TRIPO_API_KEY in the dev server environment. Use descriptive prompts (materials, style, silhouette). Save under models/ (e.g. models/barrel.glb). The scene agent can import_asset afterward.',
+    inputSchema: jsonSchema<{
+        prompt: string
+        path: string
+        negativePrompt?: string
+    }>({
+        type: 'object',
+        properties: {
+            prompt: {
+                type: 'string',
+                description:
+                    'Detailed description of the 3D object (shape, materials, style).',
+            },
+            path: {
+                type: 'string',
+                description:
+                    'Asset path to save the GLB (e.g. "models/chair.glb"). Must end with .glb.',
+            },
+            negativePrompt: {
+                type: 'string',
+                description:
+                    'Optional traits to avoid (e.g. "low poly, broken geometry").',
+            },
+        },
+        required: ['prompt', 'path'],
+    }),
+}
+
 export const listImageAssetsTool = {
     description:
         'List all image files in the asset store (.png, .jpg, .jpeg, .webp, .gif, .bmp, .tga). Use to find existing textures and sprites before generating new ones.',
@@ -1110,7 +1140,7 @@ export const presentPlanTool = {
 
 export const spawnAgentTool = {
     description:
-        'Spawn a specialist subagent. Use agentType "scene" for builds, "script" for gameplay code, "ui" for in-game UI, "asset" for images/textures, "test" for simulation runs and autonomous tests (play/stop/logs/run_autonomous_test — not for editing). Provide a clear self-contained task and any relevant context.',
+        'Spawn a specialist subagent. Use agentType "scene" for builds, "script" for gameplay code, "ui" for in-game UI, "asset" for images/textures/Tripo 3D meshes, "test" for simulation runs and autonomous tests (play/stop/logs/run_autonomous_test — not for editing). Provide a clear self-contained task and any relevant context.',
     inputSchema: jsonSchema<{
         agentType: 'scene' | 'script' | 'ui' | 'asset' | 'test'
         task: string
@@ -1122,7 +1152,7 @@ export const spawnAgentTool = {
                 type: 'string',
                 enum: ['scene', 'script', 'ui', 'asset', 'test'],
                 description:
-                    '"scene" for 3D world construction. "script" for TypeScript gameplay. "ui" for in-game UI. "asset" for images/textures. "test" for simulation-only validation (smoke, logs, run_autonomous_test).',
+                    '"scene" for 3D world construction. "script" for TypeScript gameplay. "ui" for in-game UI. "asset" for images/textures and Tripo text-to-3D GLB. "test" for simulation-only validation (smoke, logs, run_autonomous_test).',
             },
             task: {
                 type: 'string',

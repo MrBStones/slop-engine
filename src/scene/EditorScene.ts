@@ -17,6 +17,7 @@ import {
 } from 'babylonjs'
 import JSZip from 'jszip'
 import { getAssetStore, getBlob, setBlob, type AssetNode } from '../assetStore'
+import { importModelToScene } from './SceneOperations'
 
 export interface TransformSnapshot {
     position: { x: number; y: number; z: number }
@@ -168,7 +169,38 @@ function stripPhysicsFromSerialized(obj: unknown): unknown {
 }
 
 export function serializeScene(scene: Scene): string {
+    // Temporarily detach children of imported-model nodes so the
+    // serializer doesn't try to embed their (non-round-trippable) geometry.
+    // They'll be re-imported from IndexedDB blobs on load.
+    const detached: { node: TransformNode; parent: TransformNode }[] = []
+    for (const tn of scene.transformNodes) {
+        const meta = tn.metadata as Record<string, unknown> | undefined
+        if (!meta?.assetPath) continue
+        for (const child of tn.getChildren()) {
+            if (child instanceof TransformNode) {
+                detached.push({ node: child, parent: tn })
+                child.setParent(null)
+            }
+        }
+    }
+    for (const mesh of [...scene.meshes]) {
+        const parent = mesh.parent
+        if (
+            parent instanceof TransformNode &&
+            (parent.metadata as Record<string, unknown> | undefined)?.assetPath
+        ) {
+            detached.push({ node: mesh as unknown as TransformNode, parent })
+            mesh.setParent(null)
+        }
+    }
+
     const serialized = SceneSerializer.Serialize(scene)
+
+    // Reattach children
+    for (const { node, parent } of detached) {
+        node.setParent(parent)
+    }
+
     const stripped = stripPhysicsFromSerialized(serialized)
     return JSON.stringify(stripped)
 }
@@ -282,6 +314,47 @@ export async function rehydrateTextures(scene: Scene): Promise<void> {
         if (meta && mat.diffuseTexture instanceof Texture) {
             applyTextureTransformFromMetadata(mat.diffuseTexture, meta)
         }
+    }
+}
+
+/**
+ * After loading a scene from JSON, re-import models that were originally
+ * loaded from asset blobs (GLB/GLTF/OBJ). Their geometry can't round-trip
+ * through the .babylon serializer, so we detect TransformNodes tagged with
+ * `metadata.assetPath` and re-import from IndexedDB.
+ */
+export async function rehydrateImportedModels(scene: Scene): Promise<void> {
+    const resolveAsset = (path: string) => getBlob(path)
+
+    for (const tn of [...scene.transformNodes]) {
+        const meta = tn.metadata as Record<string, unknown> | undefined
+        const assetPath = meta?.assetPath as string | undefined
+        if (!assetPath) continue
+
+        const blob = await getBlob(assetPath)
+        if (!blob) continue
+
+        const filename = assetPath.slice(assetPath.lastIndexOf('/') + 1)
+        const lastSlash = assetPath.lastIndexOf('/')
+        const assetDir = lastSlash > 0 ? assetPath.slice(0, lastSlash) : ''
+
+        const newRoot = await importModelToScene(
+            scene,
+            blob,
+            filename,
+            assetDir,
+            resolveAsset,
+            assetPath
+        )
+
+        // Move re-imported children under the existing TransformNode
+        // so the original node's transform and name are preserved.
+        for (const child of [...newRoot.getChildren()]) {
+            if (child instanceof TransformNode) {
+                child.setParent(tn)
+            }
+        }
+        newRoot.dispose()
     }
 }
 
@@ -556,8 +629,7 @@ function restoreMaterials(scene: Scene, snapshot: SceneSnapshot): void {
                 mat.diffuseTexture.vOffset = snap.textureOffset[1]
             }
             if (typeof snap.textureRotation === 'number') {
-                mat.diffuseTexture.wAng =
-                    (snap.textureRotation * Math.PI) / 180
+                mat.diffuseTexture.wAng = (snap.textureRotation * Math.PI) / 180
             }
         }
     }

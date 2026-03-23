@@ -155,6 +155,10 @@ function toolLabel(
             if (error) return 'Image generation failed'
             if (done) return 'Generated image'
             return 'Generating image...'
+        case 'generate_tripo_mesh':
+            if (error) return 'Tripo mesh generation failed'
+            if (done) return 'Generated 3D mesh (Tripo)'
+            return 'Generating 3D mesh (Tripo)...'
         case 'spawn_agent': {
             const agentType = inp?.agentType as string | undefined
             const task = inp?.task as string | undefined

@@ -240,7 +240,8 @@ export default function AssetPanel(props: AssetPanelProps) {
             blob,
             node.name,
             assetDir,
-            resolveAsset
+            resolveAsset,
+            node.path
         )
         props.setSelectedNode?.(root)
         props.setNodeTick?.((t) => t + 1)
