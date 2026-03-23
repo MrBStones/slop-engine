@@ -4,6 +4,7 @@ import {
     modelSettings,
     setModelSettings,
     getDefaultModel,
+    getDefaultModels,
     type AIProvider,
     type AgentType,
     AGENT_LABELS,
@@ -30,24 +31,53 @@ export function ModelSettingsPanel() {
     const [showGoogleKey, setShowGoogleKey] = createSignal(false)
 
     const setProvider = (provider: AIProvider) => {
-        setModelSettings((prev) => ({
-            ...prev,
-            provider,
-            models: AGENT_TYPES.reduce(
-                (acc, at) => ({
-                    ...acc,
-                    [at]: getDefaultModel(provider, at),
-                }),
-                {} as Record<AgentType, string>
-            ),
-        }))
+        setModelSettings((prev) => {
+            const currentProvider = prev.provider
+            const nextProviderModels = {
+                ...prev.providerModels,
+                [currentProvider]: { ...prev.models },
+            }
+            const nextModels = nextProviderModels[provider]
+                ? { ...nextProviderModels[provider] }
+                : getDefaultModels(provider)
+
+            nextProviderModels[provider] = { ...nextModels }
+
+            return {
+                ...prev,
+                provider,
+                models: nextModels,
+                providerModels: nextProviderModels,
+            }
+        })
     }
 
     const setModel = (agentType: AgentType, model: string) => {
-        setModelSettings((prev) => ({
-            ...prev,
-            models: { ...prev.models, [agentType]: model },
-        }))
+        setModelSettings((prev) => {
+            const nextModels = { ...prev.models, [agentType]: model }
+            return {
+                ...prev,
+                models: nextModels,
+                providerModels: {
+                    ...prev.providerModels,
+                    [prev.provider]: nextModels,
+                },
+            }
+        })
+    }
+
+    const resetModelsToDefault = () => {
+        setModelSettings((prev) => {
+            const defaultModels = getDefaultModels(prev.provider)
+            return {
+                ...prev,
+                models: defaultModels,
+                providerModels: {
+                    ...prev.providerModels,
+                    [prev.provider]: defaultModels,
+                },
+            }
+        })
     }
 
     const setCredential = (
@@ -230,6 +260,16 @@ export function ModelSettingsPanel() {
                     />
                 )}
             </For>
+            <div class="flex justify-end">
+                <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={resetModelsToDefault}
+                >
+                    Reset models to default
+                </Button>
+            </div>
         </div>
     )
 }

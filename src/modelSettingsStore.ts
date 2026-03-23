@@ -21,6 +21,7 @@ export interface ModelCredentials {
 export interface ModelSettings {
     provider: AIProvider
     models: Record<AgentType, string>
+    providerModels: Record<AIProvider, Record<AgentType, string>>
     credentials: ModelCredentials
 }
 
@@ -69,16 +70,51 @@ const ALL_AGENT_TYPES: AgentType[] = [
     'test',
 ]
 
+const ALL_PROVIDERS: AIProvider[] = ['azure', 'openrouter', 'google']
+
+const normalizeModelsForProvider = (
+    provider: AIProvider,
+    models: Partial<Record<AgentType, string>> | undefined
+): Record<AgentType, string> => {
+    const defaults = getDefaultModels(provider)
+    const normalized = { ...defaults }
+
+    for (const at of ALL_AGENT_TYPES) {
+        const value = models?.[at]?.trim()
+        if (value) normalized[at] = value
+    }
+
+    return normalized
+}
+
 /** Merge persisted settings so new agent types get default model IDs. */
 export function normalizeModelSettings(settings: ModelSettings): ModelSettings {
     const provider = settings.provider
-    const prev = settings.models
-    const models = { ...prev } as Record<AgentType, string>
-    for (const at of ALL_AGENT_TYPES) {
-        const v = models[at]?.trim()
-        if (!v) models[at] = getDefaultModel(provider, at)
+    const providerModels = {} as Record<AIProvider, Record<AgentType, string>>
+
+    for (const p of ALL_PROVIDERS) {
+        providerModels[p] = normalizeModelsForProvider(
+            p,
+            settings.providerModels?.[p]
+        )
     }
-    return { ...settings, models }
+
+    providerModels[provider] = normalizeModelsForProvider(provider, settings.models)
+    const models = { ...providerModels[provider] }
+
+    return { ...settings, models, providerModels }
+}
+
+export function getDefaultModels(
+    provider: AIProvider
+): Record<AgentType, string> {
+    return ALL_AGENT_TYPES.reduce(
+        (acc, at) => ({
+            ...acc,
+            [at]: getDefaultModel(provider, at),
+        }),
+        {} as Record<AgentType, string>
+    )
 }
 
 export function getDefaultModel(
@@ -94,6 +130,11 @@ export const [modelSettings, setModelSettings] = makePersisted(
     createSignal<ModelSettings>({
         provider: 'azure',
         models: { ...DEFAULT_MODELS },
+        providerModels: {
+            azure: { ...DEFAULT_MODELS },
+            openrouter: { ...DEFAULT_OPENROUTER_MODELS },
+            google: { ...DEFAULT_GOOGLE_MODELS },
+        },
         credentials: {},
     }),
     { name: 'slop-ai-model-settings' }
