@@ -58,13 +58,6 @@ import {
     deleteAssetTool,
     createAssetFolderTool,
 } from '../src/server/tools'
-import { typeCheckScript } from '../src/server/script-typecheck'
-import { createLookupHandler } from '../src/server/api-lookup'
-import { generateImage, pollTaskResult } from '../src/server/nanobanana'
-import {
-    tripoPollUntilModelReady,
-    tripoSubmitTextToModel,
-} from '../src/server/tripo'
 
 type NodeRequest = {
     method?: string
@@ -106,6 +99,45 @@ type AnyToolCall = {
 
 let apiDtsCache: string | null = null
 let lookupHandlerCache: ((topic: string) => string) | null = null
+let typeCheckScriptCache:
+    | ((scriptContent: string, apiDtsContent: string) => string[])
+    | null = null
+let generateImageCache:
+    | ((args: {
+          apiKey: string
+          prompt: string
+          imageSize?:
+              | '1:1'
+              | '9:16'
+              | '16:9'
+              | '3:4'
+              | '4:3'
+              | '3:2'
+              | '2:3'
+              | '5:4'
+              | '4:5'
+              | '21:9'
+      }) => Promise<{ taskId: string }>)
+    | null = null
+let pollTaskResultCache:
+    | ((args: {
+          apiKey: string
+          taskId: string
+      }) => Promise<{ resultImageUrl: string } | null>)
+    | null = null
+let tripoSubmitTextToModelCache:
+    | ((args: {
+          apiKey: string
+          prompt: string
+          negativePrompt?: string
+      }) => Promise<string>)
+    | null = null
+let tripoPollUntilModelReadyCache:
+    | ((args: {
+          apiKey: string
+          taskId: string
+      }) => Promise<{ modelUrl: string }>)
+    | null = null
 
 function projectRoot() {
     return process.cwd()
@@ -120,10 +152,50 @@ function getApiDtsContent() {
     return apiDtsCache
 }
 
-function getLookupHandler() {
+async function getLookupHandler() {
     if (lookupHandlerCache) return lookupHandlerCache
+    const { createLookupHandler } = await import('../src/server/api-lookup')
     lookupHandlerCache = createLookupHandler(projectRoot())
     return lookupHandlerCache
+}
+
+async function getTypeCheckScript() {
+    if (typeCheckScriptCache) return typeCheckScriptCache
+    const mod = await import('../src/server/script-typecheck')
+    typeCheckScriptCache = mod.typeCheckScript
+    return typeCheckScriptCache
+}
+
+async function getNanobananaFns() {
+    if (generateImageCache && pollTaskResultCache) {
+        return {
+            generateImage: generateImageCache,
+            pollTaskResult: pollTaskResultCache,
+        }
+    }
+    const mod = await import('../src/server/nanobanana')
+    generateImageCache = mod.generateImage
+    pollTaskResultCache = mod.pollTaskResult
+    return {
+        generateImage: generateImageCache,
+        pollTaskResult: pollTaskResultCache,
+    }
+}
+
+async function getTripoFns() {
+    if (tripoSubmitTextToModelCache && tripoPollUntilModelReadyCache) {
+        return {
+            tripoSubmitTextToModel: tripoSubmitTextToModelCache,
+            tripoPollUntilModelReady: tripoPollUntilModelReadyCache,
+        }
+    }
+    const mod = await import('../src/server/tripo')
+    tripoSubmitTextToModelCache = mod.tripoSubmitTextToModel
+    tripoPollUntilModelReadyCache = mod.tripoPollUntilModelReady
+    return {
+        tripoSubmitTextToModel: tripoSubmitTextToModelCache,
+        tripoPollUntilModelReady: tripoPollUntilModelReadyCache,
+    }
 }
 
 function envRecord() {
@@ -205,7 +277,8 @@ export async function handleLookupScriptingApi(req: NodeRequest, res: NodeRespon
 
     try {
         const { topic } = await readJsonBody<{ topic: string }>(req)
-        const result = getLookupHandler()(typeof topic === 'string' ? topic : '')
+        const lookupHandler = await getLookupHandler()
+        const result = lookupHandler(typeof topic === 'string' ? topic : '')
         sendJson(res, { content: result })
     } catch (error) {
         console.error('[lookup-scripting-api]', error)
@@ -230,6 +303,7 @@ export async function handleTypecheck(req: NodeRequest, res: NodeResponse) {
 
     try {
         const { content } = await readJsonBody<{ content: string }>(req)
+        const typeCheckScript = await getTypeCheckScript()
         const errors = typeCheckScript(content, getApiDtsContent())
         sendJson(res, { errors })
     } catch (error) {
@@ -325,6 +399,8 @@ export async function handleGenerateTripoMesh(req: NodeRequest, res: NodeRespons
     }
 
     try {
+        const { tripoSubmitTextToModel, tripoPollUntilModelReady } =
+            await getTripoFns()
         const { prompt, path, negativePrompt } = await readJsonBody<{
             prompt: string
             path: string
@@ -389,6 +465,7 @@ export async function handleGenerateImage(req: NodeRequest, res: NodeResponse) {
     }
 
     try {
+        const { generateImage, pollTaskResult } = await getNanobananaFns()
         const { prompt, path, imageSize } = await readJsonBody<{
             prompt: string
             path: string
