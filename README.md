@@ -1,56 +1,66 @@
-## Usage
+# Slop Engine
 
-Those templates dependencies are maintained via [pnpm](https://pnpm.io) via `pnpm up -Lri`.
+A web-based 3D scene editor built with **Solid.js**, **BabylonJS**, and **Havok Physics**. Create, manipulate, and simulate 3D scenes directly in the browser.
 
-This is the reason you see a `pnpm-lock.yaml`. That being said, any package manager will work. This file can be safely be removed once you clone a template.
+## Features
+
+- **3D Viewport** with gizmo-based object manipulation (translate, rotate, scale)
+- **Scene Hierarchy** panel with drag-and-drop reparenting
+- **Properties Inspector** for editing mesh, light, and camera properties
+- **Physics Simulation** powered by Havok WASM with play/pause controls
+- **AI Assistant** panel with configurable providers (Azure OpenAI, OpenRouter, Google Gemini)
+- **Script Editor** with Monaco-based code editing
+- **Asset Management** panel
+- **Console** panel for runtime output
+- **Resizable Panel Layout** with persistent sizing via localStorage
+- **Dark Mode** UI with Tailwind CSS
+
+## Getting Started
+
+### Prerequisites
+
+- [Bun](https://bun.sh/) (package manager and runtime)
+
+### Installation
 
 ```bash
 bun install
 ```
 
-## AI provider setup
+### Development
 
-The AI settings panel supports provider/model selection per agent, with optional
-local BYOK credentials stored in browser localStorage for this workspace.
+```bash
+bun run dev
+```
 
-If you prefer environment-based keys, configure:
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-- `AZURE_OPENAI_API_KEY`
-- `AZURE_OPENAI_RESOURCE_NAME`
-- `AZURE_OPENAI_DEPLOYMENT` (optional fallback deployment)
+### Production Build
+
+```bash
+bun run build
+bun run serve   # Preview the production build
+```
+
+## AI Provider Setup
+
+The AI panel supports multiple providers with per-agent model selection. You can enter API keys directly in the browser (stored in localStorage) or set them as environment variables:
+
+- `AZURE_OPENAI_API_KEY` / `AZURE_OPENAI_RESOURCE_NAME` / `AZURE_OPENAI_DEPLOYMENT`
 - `OPENROUTER_API_KEY`
 - `GOOGLE_API_KEY` (Gemini via Google AI Studio)
 
-## Exploring the template
+## Tech Stack
 
-This template's goal is to showcase the routing features of Solid.
-It also showcase how the router and Suspense work together to parallelize data fetching tied to a route via the `.data.ts` pattern.
+- [Solid.js](https://solidjs.com/) - Reactive UI framework
+- [BabylonJS](https://www.babylonjs.com/) - 3D rendering engine
+- [Havok Physics](https://www.havok.com/) - Physics simulation
+- [Vite](https://vitejs.dev/) - Build tooling
+- [Tailwind CSS 4](https://tailwindcss.com/) - Styling
+- [corvu](https://corvu.dev/) - Resizable panel primitives
+- [Monaco Editor](https://microsoft.github.io/monaco-editor/) - Code editing
+- [Vercel AI SDK](https://sdk.vercel.ai/) - AI provider integrations
 
-You can learn more about it on the [`@solidjs/router` repository](https://github.com/solidjs/solid-router)
+## License
 
-### Learn more on the [Solid Website](https://solidjs.com) and come chat with us on our [Discord](https://discord.com/invite/solidjs)
-
-## Available Scripts
-
-In the project directory, you can run:
-
-### `npm run dev` or `npm start`
-
-Runs the app in the development mode.<br>
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
-
-The page will reload if you make edits.<br>
-
-### `npm run build`
-
-Builds the app for production to the `dist` folder.<br>
-It correctly bundles Solid in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.<br>
-Your app is ready to be deployed!
-
-## Deployment
-
-You can deploy the `dist` folder to any static host provider (netlify, surge, now, etc.)
-
-## This project was created with the [Solid CLI](https://github.com/solidjs-community/solid-cli)
+MIT

@@ -17,7 +17,7 @@ const LIFECYCLE = new Set(['start', 'update', 'destroy'])
  * Infer a TypeScript type string from a literal value token.
  * Returns `null` if the value is not a recognisable literal.
  */
-function inferTypeFromLiteral(value: string): string | null {
+export function inferTypeFromLiteral(value: string): string | null {
     value = value.trim()
     if (/^-?\d+(\.\d+)?$/.test(value)) return 'number'
     if (value === 'true' || value === 'false') return 'boolean'
@@ -40,7 +40,7 @@ function inferTypeFromLiteral(value: string): string | null {
  * Returns the content between the opening `{` of the default-exported
  * class and its matching `}`, or `null` if not found.
  */
-function extractClassBody(source: string): string | null {
+export function extractClassBody(source: string): string | null {
     // Match: export default class ... {
     const classMatch = source.match(
         /export\s+default\s+class\s+[^{]*\{/
@@ -61,7 +61,7 @@ function extractClassBody(source: string): string | null {
 }
 
 /** A parsed member of a script class. */
-interface ParsedMember {
+export interface ParsedMember {
     name: string
     signature: string // e.g. "hp: number" or "takeDamage(amount: number): void"
 }
@@ -69,7 +69,7 @@ interface ParsedMember {
 /**
  * Parse public fields and methods from a class body string.
  */
-function parseMembers(classBody: string): ParsedMember[] {
+export function parseMembers(classBody: string): ParsedMember[] {
     const members: ParsedMember[] = []
 
     // Split into top-level statements by scanning for lines at depth 0.
@@ -159,7 +159,7 @@ function parseMembers(classBody: string): ParsedMember[] {
  * Detect which base class the script extends to set the correct
  * registry type (Script & ... vs MeshScript & ... etc.)
  */
-function detectBaseClass(source: string): string {
+export function detectBaseClass(source: string): string {
     const match = source.match(
         /export\s+default\s+class\s+\w*\s+extends\s+(MeshScript|LightScript|Script)/
     )

@@ -18,7 +18,7 @@ import { RuntimeWorld } from './RuntimeWorld'
 import { getBlob } from '../assetStore'
 import { pushLog } from './consoleStore'
 
-function formatError(err: unknown, scriptPath?: string): string {
+export function formatError(err: unknown, scriptPath?: string): string {
     if (!(err instanceof Error) || !err.stack) return String(err)
     if (!scriptPath) return err.stack
     const lines = err.stack.split('\n')
@@ -103,7 +103,7 @@ type ScriptSubclassConstructor = (new () => Script) & {
     nodeType?: ScriptNodeType
 }
 
-function compileScript(tsSource: string, filePath: string): ScriptSubclassConstructor {
+export function compileScript(tsSource: string, filePath: string): ScriptSubclassConstructor {
     // Transpile TS → JS (CJS so we can extract exports.default)
     const { code: jsCode } = transform(tsSource, {
         transforms: ['typescript', 'imports'],
@@ -172,7 +172,7 @@ export function getNodeTypeName(node: Node): ScriptNodeType {
 }
 
 /** Check whether a node satisfies a script's `nodeType` constraint. */
-function isNodeCompatible(node: Node, requiredType: ScriptNodeType): boolean {
+export function isNodeCompatible(node: Node, requiredType: ScriptNodeType): boolean {
     switch (requiredType) {
         case 'Node':
             return true
