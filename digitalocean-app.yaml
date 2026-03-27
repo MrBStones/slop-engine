@@ -1,5 +1,5 @@
 name: slop-engine
-region: nyc
+region: fra
 services:
     - name: web
       dockerfile_path: Dockerfile
